@@ -14,7 +14,238 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      accounts: {
+        Row: {
+          ai_model: string
+          brand: string
+          brand_foreground: string
+          created_at: string
+          id: string
+          initials: string
+          name: string
+          product: string
+          qualification_rules: string
+          setter_prompt: string
+          tagline: string
+          ticket_label: string
+        }
+        Insert: {
+          ai_model?: string
+          brand: string
+          brand_foreground: string
+          created_at?: string
+          id: string
+          initials: string
+          name: string
+          product?: string
+          qualification_rules?: string
+          setter_prompt?: string
+          tagline?: string
+          ticket_label?: string
+        }
+        Update: {
+          ai_model?: string
+          brand?: string
+          brand_foreground?: string
+          created_at?: string
+          id?: string
+          initials?: string
+          name?: string
+          product?: string
+          qualification_rules?: string
+          setter_prompt?: string
+          tagline?: string
+          ticket_label?: string
+        }
+        Relationships: []
+      }
+      ai_usage: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          input_tokens: number
+          lead_id: string | null
+          model: string
+          output_tokens: number
+          total_tokens: number
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          lead_id?: string | null
+          model: string
+          output_tokens?: number
+          total_tokens?: number
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          input_tokens?: number
+          lead_id?: string | null
+          model?: string
+          output_tokens?: number
+          total_tokens?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_usage_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_usage_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      appointments: {
+        Row: {
+          account_id: string
+          at: string
+          created_at: string
+          id: string
+          kind: string
+          lead_id: string
+          status: string
+        }
+        Insert: {
+          account_id: string
+          at: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id: string
+          status?: string
+        }
+        Update: {
+          account_id?: string
+          at?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "appointments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "appointments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leads: {
+        Row: {
+          account_id: string
+          bot_active: boolean
+          budget: number | null
+          created_at: string
+          down_payment: number | null
+          id: string
+          intent: string | null
+          name: string
+          notes: string
+          outcome: string | null
+          phone: string
+          source: string
+          stage: number
+          tags: string[]
+          term_months: number | null
+        }
+        Insert: {
+          account_id: string
+          bot_active?: boolean
+          budget?: number | null
+          created_at?: string
+          down_payment?: number | null
+          id?: string
+          intent?: string | null
+          name: string
+          notes?: string
+          outcome?: string | null
+          phone?: string
+          source?: string
+          stage?: number
+          tags?: string[]
+          term_months?: number | null
+        }
+        Update: {
+          account_id?: string
+          bot_active?: boolean
+          budget?: number | null
+          created_at?: string
+          down_payment?: number | null
+          id?: string
+          intent?: string | null
+          name?: string
+          notes?: string
+          outcome?: string | null
+          phone?: string
+          source?: string
+          stage?: number
+          tags?: string[]
+          term_months?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leads_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      messages: {
+        Row: {
+          body: string
+          created_at: string
+          id: string
+          lead_id: string
+          sender: string
+        }
+        Insert: {
+          body: string
+          created_at?: string
+          id?: string
+          lead_id: string
+          sender: string
+        }
+        Update: {
+          body?: string
+          created_at?: string
+          id?: string
+          lead_id?: string
+          sender?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
