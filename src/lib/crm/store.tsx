@@ -9,7 +9,7 @@ interface State {
 }
 
 const KEY = "crm-ht-v1";
-const initial: State = { activeAccountId: ACCOUNTS[0].id, leads: SEED_LEADS, appointments: SEED_APPOINTMENTS };
+const initial: State = { activeAccountId: ACCOUNTS[0]!.id, leads: SEED_LEADS, appointments: SEED_APPOINTMENTS };
 
 interface Ctx {
   accounts: Account[];
@@ -48,7 +48,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<Ctx>(() => {
-    const account = ACCOUNTS.find((a) => a.id === state.activeAccountId) ?? ACCOUNTS[0];
+    const account = ACCOUNTS.find((a) => a.id === state.activeAccountId) ?? ACCOUNTS[0]!;
     return {
       accounts: ACCOUNTS,
       account,

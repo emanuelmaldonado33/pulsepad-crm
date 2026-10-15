@@ -96,7 +96,7 @@ function Simulator() {
         <div className="flex items-center gap-2 border-b px-4 py-3">
           <div className="font-semibold">Simulación · {account.name}</div>
           <span className="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
-            {STAGES[active.stage].code}
+            {STAGES[active.stage]!.code}
           </span>
           <span className={`text-xs ${active.botActive ? "text-primary" : "text-warning"}`}>{active.botActive ? "Bot activo" : "Bot en pausa"}</span>
           <Button variant="outline" size="sm" className="ml-auto" onClick={newTestLead}>Reiniciar</Button>

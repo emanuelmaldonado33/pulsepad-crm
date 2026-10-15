@@ -9,7 +9,7 @@ import { toast } from "sonner";
 
 export function stageLabel(l: Lead) {
   if (l.stage === 7) return l.outcome === "no_califica" ? "P7 · No califica" : "P7 · Ganado";
-  return `${STAGES[l.stage].code} · ${STAGES[l.stage].name}`;
+  return `${STAGES[l.stage]!.code} · ${STAGES[l.stage]!.name}`;
 }
 
 function NumField({ label, value, onChange, suffix }: { label: string; value: number | null; onChange: (v: number | null) => void; suffix?: string }) {
@@ -76,7 +76,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         <div className="flex flex-wrap gap-1.5">
           {lead.tags.length === 0 && <span className="text-xs text-muted-foreground">Sin etiquetas</span>}
           {lead.tags.map((t) => (
-            <TagChip key={t} tag={t} onRemove={readOnly ? undefined : () => updateLead(lead.id, (l) => removeTag(l, t))} />
+            <TagChip key={t} tag={t} {...(readOnly ? {} : { onRemove: () => updateLead(lead.id, (l) => removeTag(l, t)) })} />
           ))}
         </div>
         {!readOnly && (

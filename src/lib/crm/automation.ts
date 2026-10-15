@@ -96,19 +96,19 @@ export function extractData(text: string): Extraction {
 
   const down = t.match(new RegExp(String.raw`enganche[^\d$]{0,20}` + AMOUNT));
   const downPct = t.match(/enganche[^\d]{0,20}(\d{1,2})\s*%/);
-  if (downPct) out.downPaymentPct = parseInt(downPct[1], 10);
-  else if (down) out.downPayment = parseAmount(down[1], down[2]);
+  if (downPct) out.downPaymentPct = parseInt(downPct[1]!, 10);
+  else if (down) out.downPayment = parseAmount(down[1]!, down[2]);
 
   const budget = t.match(new RegExp(String.raw`(?:presupuesto|invertir|inversi[oó]n|gastar|tengo|hasta|alrededor de|como)[^\d$]{0,20}` + AMOUNT));
   if (budget && !(down && budget.index === down.index)) {
-    const v = parseAmount(budget[1], budget[2]);
+    const v = parseAmount(budget[1]!, budget[2]);
     if (v >= 1000) out.budget = v;
   }
 
   const months = t.match(/(\d{1,3})\s*(meses|mes)\b/);
   const years = t.match(/(\d{1,2})\s*(años|año|anos)\b/);
-  if (months) out.termMonths = parseInt(months[1], 10);
-  else if (years) out.termMonths = parseInt(years[1], 10) * 12;
+  if (months) out.termMonths = parseInt(months[1]!, 10);
+  else if (years) out.termMonths = parseInt(years[1]!, 10) * 12;
   else if (/de contado|contado/.test(t)) out.termMonths = 0;
 
   if (/(agendar|agenda|cita|llamada|reuni[oó]n|visita|videollamada)/.test(t)) out.wantsAppointment = true;
