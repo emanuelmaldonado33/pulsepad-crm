@@ -1,69 +1,138 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { Account, Appointment, Lead } from "./types";
-import { ACCOUNTS, SEED_APPOINTMENTS, SEED_LEADS } from "./seed";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import type { Account, Appointment, Lead, Message } from "./types";
+import { leadPatch, toAccount, toAppointment, toLead, toMessage } from "./db";
 
 interface State {
-  activeAccountId: string;
+  accounts: Account[];
   leads: Lead[];
   appointments: Appointment[];
 }
 
-const KEY = "crm-ht-v1";
-const initial: State = { activeAccountId: ACCOUNTS[0]!.id, leads: SEED_LEADS, appointments: SEED_APPOINTMENTS };
-
 interface Ctx {
+  loading: boolean;
   accounts: Account[];
   account: Account;
   setAccount: (id: string) => void;
-  leads: Lead[]; // de la subcuenta activa
+  updateAccount: (id: string, patch: Partial<Account>) => Promise<void>;
+  leads: Lead[];
   appointments: Appointment[];
   getLead: (id: string) => Lead | undefined;
   updateLead: (id: string, fn: (l: Lead) => Lead) => void;
-  addLead: (l: Lead) => void;
-  removeLead: (id: string) => void;
-  addAppointment: (a: Appointment) => void;
+  addMessage: (leadId: string, from: Message["from"], text: string) => Promise<void>;
+  createLead: (l: Omit<Lead, "id" | "messages" | "createdAt">) => Promise<Lead | null>;
+  addAppointment: (a: Omit<Appointment, "id">) => Promise<void>;
   updateAppointment: (id: string, patch: Partial<Appointment>) => void;
-  resetDemo: () => void;
+  reload: () => Promise<void>;
 }
 
 const CrmContext = createContext<Ctx | null>(null);
+const ACTIVE_KEY = "crm-active-account";
+
+const fail = (what: string, e: { message: string } | null) => {
+  if (e) {
+    console.error(what, e);
+    toast.error(`No se pudo ${what}`);
+  }
+};
+
+const PLACEHOLDER: Account = { id: "", name: "Cargando…", initials: "··", tagline: "", brand: "oklch(0.5 0.02 260)", brandForeground: "oklch(0.98 0 0)", product: "", ticketLabel: "", setterPrompt: "", qualificationRules: "", aiModel: "" };
 
 export function CrmProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<State>(initial);
-  const [loaded, setLoaded] = useState(false);
+  const [state, setState] = useState<State>({ accounts: [], leads: [], appointments: [] });
+  const [activeId, setActiveId] = useState<string>("");
+  const [loading, setLoading] = useState(true);
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  const reload = useCallback(async () => {
+    const [a, l, m, ap] = await Promise.all([
+      supabase.from("accounts").select("*").order("created_at"),
+      supabase.from("leads").select("*").order("created_at", { ascending: false }),
+      supabase.from("messages").select("*").order("created_at").limit(5000),
+      supabase.from("appointments").select("*").order("at"),
+    ]);
+    const err = a.error || l.error || m.error || ap.error;
+    if (err) return fail("cargar los datos", err);
+    const byLead = new Map<string, Message[]>();
+    for (const r of m.data ?? []) {
+      const arr = byLead.get(r.lead_id) ?? [];
+      arr.push(toMessage(r));
+      byLead.set(r.lead_id, arr);
+    }
+    setState({
+      accounts: (a.data ?? []).map(toAccount),
+      leads: (l.data ?? []).map((r) => toLead(r, byLead.get(r.id) ?? [])),
+      appointments: (ap.data ?? []).map(toAppointment),
+    });
+    setLoading(false);
+  }, []);
 
   useEffect(() => {
-    try {
-      const s = localStorage.getItem(KEY);
-      if (s) setState(JSON.parse(s));
-    } catch {}
-    setLoaded(true);
-  }, []);
-  useEffect(() => {
-    if (loaded) localStorage.setItem(KEY, JSON.stringify(state));
-  }, [state, loaded]);
-
-  const updateLead = useCallback((id: string, fn: (l: Lead) => Lead) => {
-    setState((s) => ({ ...s, leads: s.leads.map((l) => (l.id === id ? fn(l) : l)) }));
-  }, []);
+    setActiveId(localStorage.getItem(ACTIVE_KEY) ?? "");
+    void reload();
+  }, [reload]);
 
   const value = useMemo<Ctx>(() => {
-    const account = ACCOUNTS.find((a) => a.id === state.activeAccountId) ?? ACCOUNTS[0]!;
+    const account = state.accounts.find((a) => a.id === activeId) ?? state.accounts[0] ?? PLACEHOLDER;
     return {
-      accounts: ACCOUNTS,
+      loading,
+      accounts: state.accounts,
       account,
-      setAccount: (id) => setState((s) => ({ ...s, activeAccountId: id })),
+      setAccount: (id) => {
+        localStorage.setItem(ACTIVE_KEY, id);
+        setActiveId(id);
+      },
+      updateAccount: async (id, patch) => {
+        const cur = stateRef.current.accounts.find((a) => a.id === id);
+        if (!cur) return;
+        const next = { ...cur, ...patch };
+        setState((s) => ({ ...s, accounts: s.accounts.map((a) => (a.id === id ? next : a)) }));
+        const { error } = await supabase.from("accounts").update({
+          name: next.name, initials: next.initials, tagline: next.tagline, brand: next.brand,
+          brand_foreground: next.brandForeground, product: next.product, ticket_label: next.ticketLabel,
+          setter_prompt: next.setterPrompt, qualification_rules: next.qualificationRules, ai_model: next.aiModel,
+        }).eq("id", id);
+        fail("guardar la subcuenta", error);
+      },
       leads: state.leads.filter((l) => l.accountId === account.id),
       appointments: state.appointments.filter((a) => a.accountId === account.id),
       getLead: (id) => state.leads.find((l) => l.id === id),
-      updateLead,
-      addLead: (l) => setState((s) => ({ ...s, leads: [l, ...s.leads] })),
-      removeLead: (id) => setState((s) => ({ ...s, leads: s.leads.filter((l) => l.id !== id), appointments: s.appointments.filter((a) => a.leadId !== id) })),
-      addAppointment: (a) => setState((s) => ({ ...s, appointments: [...s.appointments, a] })),
-      updateAppointment: (id, patch) => setState((s) => ({ ...s, appointments: s.appointments.map((a) => (a.id === id ? { ...a, ...patch } : a)) })),
-      resetDemo: () => setState({ ...initial, activeAccountId: state.activeAccountId }),
+      updateLead: (id, fn) => {
+        const cur = stateRef.current.leads.find((l) => l.id === id);
+        if (!cur) return;
+        const next = fn(cur);
+        setState((s) => ({ ...s, leads: s.leads.map((l) => (l.id === id ? next : l)) }));
+        void supabase.from("leads").update(leadPatch(next)).eq("id", id).then(({ error }) => fail("guardar el lead", error));
+      },
+      addMessage: async (leadId, from, text) => {
+        const { data, error } = await supabase.from("messages").insert({ lead_id: leadId, sender: from, body: text }).select().single();
+        if (error || !data) return fail("enviar el mensaje", error);
+        setState((s) => ({ ...s, leads: s.leads.map((l) => (l.id === leadId ? { ...l, messages: [...l.messages, toMessage(data)] } : l)) }));
+      },
+      createLead: async (l) => {
+        const { data, error } = await supabase.from("leads").insert({ account_id: l.accountId, ...leadPatch({ ...l, id: "", messages: [], createdAt: "" }) }).select().single();
+        if (error || !data) {
+          fail("crear el lead", error);
+          return null;
+        }
+        const lead = toLead(data, []);
+        setState((s) => ({ ...s, leads: [lead, ...s.leads] }));
+        return lead;
+      },
+      addAppointment: async (a) => {
+        const { data, error } = await supabase.from("appointments").insert({ account_id: a.accountId, lead_id: a.leadId, at: a.at, kind: a.kind, status: a.status }).select().single();
+        if (error || !data) return fail("crear la cita", error);
+        setState((s) => ({ ...s, appointments: [...s.appointments, toAppointment(data)] }));
+      },
+      updateAppointment: (id, patch) => {
+        setState((s) => ({ ...s, appointments: s.appointments.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
+        void supabase.from("appointments").update({ ...(patch.status ? { status: patch.status } : {}), ...(patch.at ? { at: patch.at } : {}) }).eq("id", id).then(({ error }) => fail("actualizar la cita", error));
+      },
+      reload,
     };
-  }, [state, updateLead]);
+  }, [state, activeId, loading, reload]);
 
   return <CrmContext.Provider value={value}>{children}</CrmContext.Provider>;
 }
