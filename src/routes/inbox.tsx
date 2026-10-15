@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/inbox")({
-  validateSearch: (s: Record<string, unknown>): { lead?: string } => ({ lead: typeof s.lead === "string" ? s.lead : undefined }),
+  validateSearch: (s: Record<string, unknown>): { lead?: string | undefined } => ({ lead: typeof s["lead"] === "string" ? s["lead"] : undefined }),
   head: () => ({
     meta: [
       { title: "Bandeja WhatsApp — Nexo CRM" },
