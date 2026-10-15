@@ -26,7 +26,7 @@ export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
 
 export const leadPatch = (l: Lead) => ({
   name: l.name, phone: l.phone, source: l.source, stage: l.stage, outcome: l.outcome,
-  budget: l.budget, down_payment: l.downPayment, term_months: l.termMonths, intent: l.intent,
+  budget: l.budget, down_payment: l.downPayment, term_months: l.termMonths, intent: l.intent ?? null,
   tags: l.tags, notes: l.notes, bot_active: l.botActive,
 });
 

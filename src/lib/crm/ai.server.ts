@@ -32,7 +32,7 @@ export async function runQualifier(opts: {
   system: string;
   messages: ModelMessage[];
 }) {
-  const apiKey = process.env.LOVABLE_API_KEY;
+  const apiKey = process.env['LOVABLE_API_KEY'];
   if (!apiKey) throw new Error("La IA no está configurada (falta la clave).");
   const provider = createOpenAI({
     baseURL: "https://ai.gateway.lovable.dev/v1",
