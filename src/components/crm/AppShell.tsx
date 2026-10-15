@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
-import { CalendarDays, FlaskConical, KanbanSquare, MessageCircle, RotateCcw } from "lucide-react";
+import { CalendarDays, FlaskConical, KanbanSquare, LogOut, MessageCircle, Settings2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
 import { useCrm } from "@/lib/crm/store";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
@@ -10,6 +11,7 @@ const NAV = [
   { to: "/inbox", label: "Bandeja", icon: MessageCircle },
   { to: "/simulador", label: "Simulador", icon: FlaskConical },
   { to: "/citas", label: "Citas", icon: CalendarDays },
+  { to: "/configuracion", label: "Configuración IA", icon: Settings2 },
 ] as const;
 
 export function BrandMark({ initials, size = 36 }: { initials: string; size?: number }) {
@@ -24,7 +26,7 @@ export function BrandMark({ initials, size = 36 }: { initials: string; size?: nu
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
-  const { accounts, account, setAccount, resetDemo } = useCrm();
+  const { accounts, account, setAccount, loading } = useCrm();
   const brandVars = {
     "--primary": account.brand,
     "--ring": account.brand,
@@ -72,12 +74,12 @@ export function AppShell({ children }: { children: ReactNode }) {
             ))}
           </nav>
 
-          <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={resetDemo}>
-            <RotateCcw className="mr-1 h-4 w-4" /> Restaurar demo
+          <Button variant="ghost" size="sm" className="ml-auto text-muted-foreground" onClick={() => supabase.auth.signOut()}>
+            <LogOut className="mr-1 h-4 w-4" /> Salir
           </Button>
         </div>
       </header>
-      <main className="flex min-h-0 flex-1 flex-col">{children}</main>
+      <main className="flex min-h-0 flex-1 flex-col">{loading ? <div className="p-8 text-sm text-muted-foreground">Cargando datos…</div> : children}</main>
     </div>
   );
 }

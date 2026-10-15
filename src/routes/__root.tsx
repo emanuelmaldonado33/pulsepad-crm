@@ -14,6 +14,7 @@ import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { CrmProvider } from "@/lib/crm/store";
 import { AppShell } from "@/components/crm/AppShell";
+import { AuthGate } from "@/components/crm/AuthGate";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -126,12 +127,14 @@ function RootComponent() {
   return (
     <QueryClientProvider client={queryClient}>
       {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <CrmProvider>
-        <AppShell>
-          <Outlet />
-        </AppShell>
-        <Toaster />
-      </CrmProvider>
+      <AuthGate>
+        <CrmProvider>
+          <AppShell>
+            <Outlet />
+          </AppShell>
+        </CrmProvider>
+      </AuthGate>
+      <Toaster />
     </QueryClientProvider>
   );
 }
