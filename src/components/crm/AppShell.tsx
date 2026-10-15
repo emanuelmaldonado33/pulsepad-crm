@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
-import type { CSSProperties, ReactNode } from "react";
-import { CalendarDays, FlaskConical, KanbanSquare, LogOut, MessageCircle, Settings2 } from "lucide-react";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import { NewAccountDialog } from "./NewAccountDialog";
+import { CalendarDays, FlaskConical, KanbanSquare, LogOut, MessageCircle, Plus, Settings2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useCrm } from "@/lib/crm/store";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
@@ -27,6 +28,7 @@ export function BrandMark({ initials, size = 36 }: { initials: string; size?: nu
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { accounts, account, setAccount, loading } = useCrm();
+  const [newOpen, setNewOpen] = useState(false);
   const brandVars = {
     "--primary": account.brand,
     "--ring": account.brand,
@@ -58,6 +60,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="icon" className="h-8 w-8 shrink-0" onClick={() => setNewOpen(true)} aria-label="Nueva subcuenta" title="Nueva subcuenta">
+            <Plus className="h-4 w-4" />
+          </Button>
+          <NewAccountDialog open={newOpen} onOpenChange={setNewOpen} />
 
           <nav className="ml-2 flex items-center gap-1 overflow-x-auto">
             {NAV.map(({ to, label, icon: Icon }) => (

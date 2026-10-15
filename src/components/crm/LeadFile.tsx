@@ -3,6 +3,7 @@ import { money, termLabel, useCrm } from "@/lib/crm/store";
 import { STAGES, type Lead } from "@/lib/crm/types";
 import { TAG_RULES, applyTag, removeTag } from "@/lib/crm/automation";
 import { TagChip } from "./AppShell";
+import { QuoteCalculator } from "./QuoteCalculator";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -30,7 +31,8 @@ function NumField({ label, value, onChange, suffix }: { label: string; value: nu
 }
 
 export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean }) {
-  const { updateLead } = useCrm();
+  const { updateLead, account } = useCrm();
+  const quick = Array.from(new Set([...Object.keys(TAG_RULES), ...account.standardTags])).filter((t) => !lead.tags.includes(t));
   const [newTag, setNewTag] = useState("");
   const set = (patch: Partial<Lead>) => updateLead(lead.id, (l) => ({ ...l, ...patch }));
 
@@ -91,8 +93,8 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
               <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Nueva etiqueta" className="h-8" />
             </form>
             <div className="mt-2 flex flex-wrap gap-1">
-              {Object.entries(TAG_RULES).map(([t, r]) => (
-                <button key={t} title={r.label} onClick={() => addTag(t)} className="rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
+              {quick.map((t) => (
+                <button key={t} title={TAG_RULES[t]?.label ?? "Etiqueta descriptiva"} onClick={() => addTag(t)} className="rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
                   +{t}
                 </button>
               ))}
@@ -100,6 +102,8 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
           </>
         )}
       </section>
+
+      {!readOnly && <QuoteCalculator key={lead.id} lead={lead} />}
 
       <section>
         <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Notas del asesor</div>
