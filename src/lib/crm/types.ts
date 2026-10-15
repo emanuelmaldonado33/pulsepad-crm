@@ -16,6 +16,9 @@ export interface Account {
   brandForeground: string;
   product: string;
   ticketLabel: string;
+  setterPrompt: string;
+  qualificationRules: string;
+  aiModel: string;
 }
 
 export type Outcome = "ganado" | "no_califica" | null;
@@ -31,6 +34,7 @@ export interface Lead {
   budget: number | null;
   downPayment: number | null; // monto
   termMonths: number | null;
+  intent?: string | null;
   tags: string[];
   notes: string;
   botActive: boolean;
