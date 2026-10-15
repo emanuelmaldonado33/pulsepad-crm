@@ -39,7 +39,7 @@ Si el prospecto acepta o pide una cita y su perfil está completo, marca appoint
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
 Extrae datos de TODO el historial, no sólo del último mensaje. Los montos deben ser números en pesos (ej. "1.2 millones" = 1200000; "20% de enganche" sobre 1,000,000 = 200000).
-Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(", ")}. Úsalas sólo cuando aplique según las reglas. Puedes agregar etiquetas descriptivas propias (ej. vip, inversionista).`;
+Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(", ")}. Úsalas sólo cuando aplique según las reglas. Puedes agregar como máximo 2 etiquetas descriptivas propias de perfil (ej. vip, inversionista); no crees etiquetas que repitan presupuesto, enganche o plazo.`;
 
     const { runQualifier } = await import("./ai.server");
     let ai;
