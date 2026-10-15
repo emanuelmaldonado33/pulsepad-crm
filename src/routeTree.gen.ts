@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CitasRouteImport } from './routes/citas'
+import { Route as ConfiguracionRouteImport } from './routes/configuracion'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as SimuladorRouteImport } from './routes/simulador'
 
@@ -22,6 +23,11 @@ const IndexRoute = IndexRouteImport.update({
 const CitasRoute = CitasRouteImport.update({
   id: '/citas',
   path: '/citas',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConfiguracionRoute = ConfiguracionRouteImport.update({
+  id: '/configuracion',
+  path: '/configuracion',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InboxRoute = InboxRouteImport.update({
@@ -38,12 +44,14 @@ const SimuladorRoute = SimuladorRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
+  '/configuracion': typeof ConfiguracionRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
+  '/configuracion': typeof ConfiguracionRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
 }
@@ -51,20 +59,22 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
+  '/configuracion': typeof ConfiguracionRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/citas' | '/inbox' | '/simulador'
+  fullPaths: '/' | '/citas' | '/configuracion' | '/inbox' | '/simulador'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/citas' | '/inbox' | '/simulador'
-  id: '__root__' | '/' | '/citas' | '/inbox' | '/simulador'
+  to: '/' | '/citas' | '/configuracion' | '/inbox' | '/simulador'
+  id: '__root__' | '/' | '/citas' | '/configuracion' | '/inbox' | '/simulador'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CitasRoute: typeof CitasRoute
+  ConfiguracionRoute: typeof ConfiguracionRoute
   InboxRoute: typeof InboxRoute
   SimuladorRoute: typeof SimuladorRoute
 }
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/citas'
       fullPath: '/citas'
       preLoaderRoute: typeof CitasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/configuracion': {
+      id: '/configuracion'
+      path: '/configuracion'
+      fullPath: '/configuracion'
+      preLoaderRoute: typeof ConfiguracionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/inbox': {
@@ -105,6 +122,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CitasRoute: CitasRoute,
+  ConfiguracionRoute: ConfiguracionRoute,
   InboxRoute: InboxRoute,
   SimuladorRoute: SimuladorRoute,
 }

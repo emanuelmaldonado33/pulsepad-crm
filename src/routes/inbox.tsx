@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Send } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
-import { msg, setBot } from "@/lib/crm/automation";
+import { setBot } from "@/lib/crm/automation";
 import { ChatThread } from "@/components/crm/ChatThread";
 import { LeadFile, stageLabel } from "@/components/crm/LeadFile";
 import { Switch } from "@/components/ui/switch";
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/inbox")({
 });
 
 function Inbox() {
-  const { leads, updateLead } = useCrm();
+  const { leads, updateLead, addMessage } = useCrm();
   const { lead: leadParam } = Route.useSearch();
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -32,7 +32,7 @@ function Inbox() {
 
   const send = () => {
     if (!text.trim() || !lead) return;
-    updateLead(lead.id, (l) => ({ ...l, messages: [...l.messages, msg("asesor", text.trim())] }));
+    void addMessage(lead.id, "asesor", text.trim());
     setText("");
   };
 
