@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Account, Appointment, Lead, Message } from "./types";
+import { applyTag } from "./automation";
 import { leadPatch, toAccount, toAppointment, toLead, toMessage } from "./db";
 
 interface State {
@@ -25,6 +26,8 @@ interface Ctx {
   addAppointment: (a: Omit<Appointment, "id">) => Promise<void>;
   updateAppointment: (id: string, patch: Partial<Appointment>) => void;
   reload: () => Promise<void>;
+  createAccount: (a: Account) => Promise<boolean>;
+  importLeads: (rows: { name: string; phone: string; budget: number | null; tag: string | null }[]) => Promise<number>;
 }
 
 const CrmContext = createContext<Ctx | null>(null);
@@ -37,7 +40,7 @@ const fail = (what: string, e: { message: string } | null) => {
   }
 };
 
-const PLACEHOLDER: Account = { id: "", name: "Cargando…", initials: "··", tagline: "", brand: "oklch(0.5 0.02 260)", brandForeground: "oklch(0.98 0 0)", product: "", ticketLabel: "", setterPrompt: "", qualificationRules: "", aiModel: "" };
+const PLACEHOLDER: Account = { id: "", name: "Cargando…", initials: "··", tagline: "", brand: "oklch(0.5 0.02 260)", brandForeground: "oklch(0.98 0 0)", product: "", ticketLabel: "", setterPrompt: "", qualificationRules: "", aiModel: "", template: "", standardTags: [] };
 
 export function CrmProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>({ accounts: [], leads: [], appointments: [] });
@@ -131,6 +134,34 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         void supabase.from("appointments").update({ ...(patch.status ? { status: patch.status } : {}), ...(patch.at ? { at: patch.at } : {}) }).eq("id", id).then(({ error }) => fail("actualizar la cita", error));
       },
       reload,
+      createAccount: async (a) => {
+        const { error } = await supabase.from("accounts").insert({
+          id: a.id, name: a.name, initials: a.initials, tagline: a.tagline, brand: a.brand, brand_foreground: a.brandForeground,
+          product: a.product, ticket_label: a.ticketLabel, setter_prompt: a.setterPrompt, qualification_rules: a.qualificationRules,
+          ai_model: a.aiModel, template: a.template, standard_tags: a.standardTags,
+        });
+        if (error) { fail("crear la subcuenta", error); return false; }
+        setState((s) => ({ ...s, accounts: [...s.accounts, a] }));
+        localStorage.setItem(ACTIVE_KEY, a.id);
+        setActiveId(a.id);
+        return true;
+      },
+      importLeads: async (rows) => {
+        const base = { id: "", accountId: account.id, name: "", phone: "", source: "Importación CSV", stage: 0, outcome: null, budget: null, downPayment: null, termMonths: null, intent: null, tags: [] as string[], notes: "", botActive: true, messages: [], createdAt: "" };
+        const payload = rows.map((r) => {
+          let l = { ...base, name: r.name.slice(0, 120), phone: r.phone.slice(0, 40), budget: r.budget };
+          if (r.tag) l = applyTag(l, r.tag.slice(0, 40));
+          return { account_id: account.id, ...leadPatch(l) };
+        });
+        let n = 0;
+        for (let i = 0; i < payload.length; i += 500) {
+          const { data, error } = await supabase.from("leads").insert(payload.slice(i, i + 500)).select();
+          if (error) { fail("importar los leads", error); break; }
+          n += data?.length ?? 0;
+        }
+        await reload();
+        return n;
+      },
     };
   }, [state, activeId, loading, reload]);
 

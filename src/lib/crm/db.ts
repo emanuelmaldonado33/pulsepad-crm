@@ -10,7 +10,7 @@ export type AppointmentRow = T["appointments"]["Row"];
 export const toAccount = (r: AccountRow): Account => ({
   id: r.id, name: r.name, initials: r.initials, tagline: r.tagline, brand: r.brand,
   brandForeground: r.brand_foreground, product: r.product, ticketLabel: r.ticket_label,
-  setterPrompt: r.setter_prompt, qualificationRules: r.qualification_rules, aiModel: r.ai_model,
+  setterPrompt: r.setter_prompt, qualificationRules: r.qualification_rules, aiModel: r.ai_model, template: r.template, standardTags: r.standard_tags ?? [],
 });
 
 export const toMessage = (r: MessageRow): Message => ({ id: r.id, from: r.sender as Message["from"], text: r.body, at: r.created_at });
