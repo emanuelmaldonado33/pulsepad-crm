@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { CSSProperties, ReactNode } from "react";
 import { CalendarDays, FlaskConical, KanbanSquare, MessageCircle, RotateCcw } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 
 const NAV = [
@@ -44,7 +44,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="text-xs text-muted-foreground">{account.tagline}</div>
                 </div>
               </div>
-              <SelectValue className="sr-only" />
             </SelectTrigger>
             <SelectContent>
               {accounts.map((a) => (
