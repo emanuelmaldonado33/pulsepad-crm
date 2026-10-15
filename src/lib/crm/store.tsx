@@ -149,7 +149,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       importLeads: async (rows) => {
         const base = { id: "", accountId: account.id, name: "", phone: "", source: "Importación CSV", stage: 0, outcome: null, budget: null, downPayment: null, termMonths: null, intent: null, tags: [] as string[], notes: "", botActive: true, messages: [], createdAt: "" };
         const payload = rows.map((r) => {
-          let l = { ...base, name: r.name.slice(0, 120), phone: r.phone.slice(0, 40), budget: r.budget };
+          let l: Lead = { ...base, name: r.name.slice(0, 120), phone: r.phone.slice(0, 40), budget: r.budget };
           if (r.tag) l = applyTag(l, r.tag.slice(0, 40));
           return { account_id: account.id, ...leadPatch(l) };
         });
