@@ -19,6 +19,8 @@ export interface Account {
   setterPrompt: string;
   qualificationRules: string;
   aiModel: string;
+  template: string;
+  standardTags: string[];
 }
 
 export type Outcome = "ganado" | "no_califica" | null;

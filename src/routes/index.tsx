@@ -1,6 +1,10 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Bot, BotOff, Search } from "lucide-react";
+import { Bot, BotOff, MessageCircle, Search, Upload } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
+import { LeadFile } from "@/components/crm/LeadFile";
+import { ImportLeadsDialog } from "@/components/crm/ImportLeadsDialog";
 import { money, useCrm } from "@/lib/crm/store";
 import { STAGES, type Lead } from "@/lib/crm/types";
 import { moveToStage } from "@/lib/crm/automation";
@@ -29,6 +33,9 @@ function Pipeline() {
   const [filter, setFilter] = useState<Filter>("todos");
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const openLead = leads.find((l) => l.id === openId);
 
   const filtered = useMemo(
     () =>
@@ -87,7 +94,28 @@ function Pipeline() {
             {label}
           </button>
         ))}
+        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setImportOpen(true)}>
+          <Upload className="mr-2 h-4 w-4" /> Importar CSV
+        </Button>
       </div>
+      <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} />
+      <Sheet open={!!openLead} onOpenChange={(v) => !v && setOpenId(null)}>
+        <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-md">
+          <SheetHeader className="px-4 pt-4">
+            <SheetTitle>Expediente del lead</SheetTitle>
+          </SheetHeader>
+          {openLead && (
+            <>
+              <div className="px-4 pt-2">
+                <Button size="sm" variant="outline" onClick={() => navigate({ to: "/inbox", search: { lead: openLead.id } })}>
+                  <MessageCircle className="mr-2 h-4 w-4" /> Abrir chat
+                </Button>
+              </div>
+              <LeadFile key={openLead.id} lead={openLead} />
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
 
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-6 lg:px-6">
         {STAGES.map((s, i) => {
@@ -128,7 +156,7 @@ function Pipeline() {
                           key={l.id}
                           draggable
                           onDragStart={() => setDragId(l.id)}
-                          onClick={() => navigate({ to: "/inbox", search: { lead: l.id } })}
+                          onClick={() => setOpenId(l.id)}
                           className={`rounded-lg border bg-card p-3 text-left shadow-sm transition hover:shadow-md ${dragId === l.id ? "opacity-50" : ""}`}
                         >
                           <div className="flex items-start gap-2">

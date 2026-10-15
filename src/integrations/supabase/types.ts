@@ -26,7 +26,9 @@ export type Database = {
           product: string
           qualification_rules: string
           setter_prompt: string
+          standard_tags: string[]
           tagline: string
+          template: string
           ticket_label: string
         }
         Insert: {
@@ -40,7 +42,9 @@ export type Database = {
           product?: string
           qualification_rules?: string
           setter_prompt?: string
+          standard_tags?: string[]
           tagline?: string
+          template?: string
           ticket_label?: string
         }
         Update: {
@@ -54,7 +58,9 @@ export type Database = {
           product?: string
           qualification_rules?: string
           setter_prompt?: string
+          standard_tags?: string[]
           tagline?: string
+          template?: string
           ticket_label?: string
         }
         Relationships: []
