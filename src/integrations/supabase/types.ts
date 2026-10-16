@@ -373,6 +373,8 @@ export type Database = {
           id: string
           lead_id: string
           sender: string
+          wa_message_id: string | null
+          wa_status: string | null
         }
         Insert: {
           body: string
@@ -380,6 +382,8 @@ export type Database = {
           id?: string
           lead_id: string
           sender: string
+          wa_message_id?: string | null
+          wa_status?: string | null
         }
         Update: {
           body?: string
@@ -387,6 +391,8 @@ export type Database = {
           id?: string
           lead_id?: string
           sender?: string
+          wa_message_id?: string | null
+          wa_status?: string | null
         }
         Relationships: [
           {
@@ -394,6 +400,53 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_channels: {
+        Row: {
+          access_token: string
+          account_id: string
+          app_secret: string
+          enabled: boolean
+          last_checked_at: string | null
+          last_error: string | null
+          phone_number_id: string
+          updated_at: string
+          verify_token: string
+          waba_id: string
+        }
+        Insert: {
+          access_token?: string
+          account_id: string
+          app_secret?: string
+          enabled?: boolean
+          last_checked_at?: string | null
+          last_error?: string | null
+          phone_number_id?: string
+          updated_at?: string
+          verify_token?: string
+          waba_id?: string
+        }
+        Update: {
+          access_token?: string
+          account_id?: string
+          app_secret?: string
+          enabled?: boolean
+          last_checked_at?: string | null
+          last_error?: string | null
+          phone_number_id?: string
+          updated_at?: string
+          verify_token?: string
+          waba_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_channels_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: true
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]

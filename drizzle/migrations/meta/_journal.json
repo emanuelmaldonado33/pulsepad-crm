@@ -50,6 +50,13 @@
       "when": 1792109544789,
       "tag": "0006_materials_storage_path",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792109999943,
+      "tag": "0007_whatsapp_channels",
+      "breakpoints": true
     }
   ]
 }
