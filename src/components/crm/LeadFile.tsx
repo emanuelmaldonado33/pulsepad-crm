@@ -3,7 +3,6 @@ import { money, termLabel, useCrm } from "@/lib/crm/store";
 import { STAGES, type Lead } from "@/lib/crm/types";
 import { TAG_RULES, applyTag, removeTag } from "@/lib/crm/automation";
 import { TagChip } from "./AppShell";
-import { QuoteCalculator } from "./QuoteCalculator";
 import { LeadFlows } from "./LeadFlows";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -106,7 +105,6 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         )}
       </section>
 
-      {!readOnly && <QuoteCalculator key={lead.id} lead={lead} />}
 
       <section>
         <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Notas del asesor</div>
