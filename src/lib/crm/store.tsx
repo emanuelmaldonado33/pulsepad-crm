@@ -183,8 +183,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         const { data, error } = await supabase.from("flow_enrollments").insert({ flow_id: flowId, lead_id: leadId, account_id: lead.accountId }).select().single();
         if (error || !data) return; // ya inscrito (índice único) u otro error
         const enr = toEnrollment(data);
+        stateRef.current = { ...stateRef.current, enrollments: [enr, ...stateRef.current.enrollments] };
         setState((s) => ({ ...s, enrollments: [enr, ...s.enrollments] }));
-        await runRef.current(enr.id, true);
+        await runRef.current(enr.id);
       },
       cancelEnrollment: async (id, reason) => {
         setState((s) => ({ ...s, enrollments: s.enrollments.map((e) => (e.id === id ? { ...e, status: "cancelled", cancelReason: reason } : e)) }));
