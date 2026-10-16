@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { ArrowDown, ArrowUp, Clock, MessageSquare, Paperclip, Trash2, Zap, CalendarClock, ShieldCheck } from "lucide-react";
 import { STAGES } from "@/lib/crm/types";
-import { VARIABLES, sid, type Flow, type FlowStep, type Material } from "@/lib/crm/flows";
+import { VARIABLES, materialIcon, sid, type Flow, type FlowStep, type Material } from "@/lib/crm/flows";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -82,7 +82,7 @@ export function FlowEditor({ flow, materials, onClose, onSave }: { flow: Flow; m
                       <Paperclip className="h-3.5 w-3.5" /> Adjuntar
                       <select className={sel} value={st.materialId ?? ""} onChange={(e) => setStep(i, { ...st, materialId: e.target.value || null })}>
                         <option value="">Sin adjunto</option>
-                        {materials.map((m) => <option key={m.id} value={m.id}>{m.kind === "video" ? "🎥" : "📄"} {m.name}</option>)}
+                        {materials.map((m) => <option key={m.id} value={m.id}>{materialIcon(m.kind)} {m.name}</option>)}
                       </select>
                     </label>
                   </div>

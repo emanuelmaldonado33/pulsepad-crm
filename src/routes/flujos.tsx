@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Copy, FileText, Pencil, Plus, Trash2, Video, Workflow } from "lucide-react";
+import { Copy, FileText, Image as ImageIcon, Upload, Pencil, Plus, Trash2, Video, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import { useCrm } from "@/lib/crm/store";
 import { STAGES } from "@/lib/crm/types";
@@ -28,7 +28,7 @@ export const Route = createFileRoute("/flujos")({
 const stageName = (n: number) => `${STAGES[n]?.code ?? "P?"} ${STAGES[n]?.name ?? ""}`;
 
 function Flows() {
-  const { account, flows, enrollments, materials, saveFlow, deleteFlow, addMaterial, deleteMaterial } = useCrm();
+  const { account, flows, enrollments, materials, saveFlow, deleteFlow, addMaterial, deleteMaterial, uploadMaterial } = useCrm();
   const [editing, setEditing] = useState<{ flow: Flow; isNew: boolean } | null>(null);
   const blank = (): Flow => ({ id: "", accountId: account.id, name: "Nuevo flujo", active: false, triggerType: "new_lead", triggerValue: "", steps: [], stopOnReply: true });
 
@@ -38,7 +38,7 @@ function Flows() {
         <Workflow className="h-6 w-6 text-primary" />
         <div>
           <h1 className="font-display text-2xl font-semibold">Flujos · {account.name}</h1>
-          <p className="text-sm text-muted-foreground">Seguimientos automáticos paso a paso. Se ejecutan mientras el CRM está abierto.</p>
+          <p className="text-sm text-muted-foreground">Seguimientos automáticos paso a paso. Se ejecutan en el servidor 24/7, aunque nadie tenga el CRM abierto.</p>
         </div>
         <Button className="ml-auto" onClick={() => setEditing({ flow: blank(), isNew: true })}><Plus className="mr-1 h-4 w-4" /> Nuevo flujo</Button>
       </div>
@@ -90,7 +90,7 @@ function Flows() {
         </TabsContent>
 
         <TabsContent value="biblioteca" className="mt-4">
-          <Library materials={materials} onAdd={(m) => addMaterial({ ...m, accountId: account.id })} onDelete={deleteMaterial} />
+          <Library materials={materials} onUpload={uploadMaterial} onAdd={(m) => addMaterial({ ...m, accountId: account.id })} onDelete={deleteMaterial} />
         </TabsContent>
       </Tabs>
 
@@ -110,19 +110,36 @@ function Stat({ k, v }: { k: string; v: string }) {
   );
 }
 
-function Library({ materials, onAdd, onDelete }: { materials: Material[]; onAdd: (m: Omit<Material, "id" | "accountId">) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
+function Library({ materials, onAdd, onDelete, onUpload }: { materials: Material[]; onUpload: (f: File, name: string) => Promise<boolean>; onAdd: (m: Omit<Material, "id" | "accountId">) => Promise<void>; onDelete: (id: string) => Promise<void> }) {
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [kind, setKind] = useState<Material["kind"]>("pdf");
   const valid = name.trim() && /^https?:\/\//.test(url.trim());
+  const [busy, setBusy] = useState(false);
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setBusy(true);
+    for (const f of Array.from(files)) {
+      if (f.size > 50 * 1024 * 1024) { toast.error(`«${f.name}» pesa más de 50 MB`); continue; }
+      if (await onUpload(f, f.name.replace(/\.[^.]+$/, ""))) toast.success(`«${f.name}» subido`);
+    }
+    setBusy(false);
+  };
   return (
     <div className="space-y-3">
+      <label className={`flex cursor-pointer flex-col items-center gap-1 rounded-xl border-2 border-dashed bg-card p-6 text-center hover:border-primary ${busy ? "pointer-events-none opacity-60" : ""}`}>
+        <Upload className="h-6 w-6 text-primary" />
+        <span className="text-sm font-semibold">{busy ? "Subiendo…" : "Subir archivos"}</span>
+        <span className="text-xs text-muted-foreground">PDF, imágenes o videos cortos · máx. 50 MB</span>
+        <input type="file" multiple accept="application/pdf,image/*,video/*" className="hidden" onChange={(e) => { void upload(e.target.files); e.target.value = ""; }} />
+      </label>
+      <div className="text-xs text-muted-foreground">O agrega un enlace externo:</div>
       <form
         className="flex flex-wrap gap-2 rounded-xl border bg-card p-3"
         onSubmit={async (e) => { e.preventDefault(); if (!valid) return; await onAdd({ name: name.trim(), url: url.trim(), kind }); setName(""); setUrl(""); }}
       >
         <select className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={kind} onChange={(e) => setKind(e.target.value as Material["kind"])}>
-          <option value="pdf">Documento PDF</option><option value="video">Video</option>
+          <option value="pdf">Documento PDF</option><option value="video">Video</option><option value="image">Imagen</option>
         </select>
         <Input className="w-56" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nombre (ej. Brochure oficial)" />
         <Input className="min-w-64 flex-1" value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Enlace https://…" />
@@ -130,10 +147,10 @@ function Library({ materials, onAdd, onDelete }: { materials: Material[]; onAdd:
       </form>
       {materials.map((m) => (
         <div key={m.id} className="flex items-center gap-3 rounded-xl border bg-card p-3">
-          {m.kind === "video" ? <Video className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-primary" />}
+          {m.kind === "video" ? <Video className="h-5 w-5 text-primary" /> : m.kind === "image" ? <ImageIcon className="h-5 w-5 text-primary" /> : <FileText className="h-5 w-5 text-primary" />}
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-semibold">{m.name}</div>
-            <a href={m.url} target="_blank" rel="noreferrer" className="block truncate text-xs text-muted-foreground hover:text-primary">{m.url}</a>
+            <div className="text-sm font-semibold">{m.name} {m.storagePath && <span className="ml-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium">Subido</span>}</div>
+            <a href={m.url} target="_blank" rel="noreferrer" className="block max-w-xl truncate text-xs text-muted-foreground hover:text-primary">{m.url}</a>
           </div>
           <Button size="sm" variant="outline" onClick={() => { void navigator.clipboard.writeText(m.url); toast.success("Enlace copiado"); }}><Copy className="mr-1 h-3.5 w-3.5" /> Copiar enlace</Button>
           <Button size="icon" variant="ghost" className="text-destructive" onClick={() => void onDelete(m.id)} aria-label="Eliminar"><Trash2 className="h-4 w-4" /></Button>

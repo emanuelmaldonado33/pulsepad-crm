@@ -2,8 +2,10 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Account, Appointment, Lead, Message } from "./types";
-import { applyTag, moveToStage, removeTag } from "./automation";
-import { matchTriggers, renderText, waitMs, type Enrollment, type Flow, type FlowStep, type Material } from "./flows";
+import { applyTag } from "./automation";
+import type { Enrollment, Flow, Material } from "./flows";
+import { useServerFn } from "@tanstack/react-start";
+import { runFlowNow } from "./flows.functions";
 import { leadPatch, toAccount, toAppointment, toEnrollment, toFlow, toLead, toMessage } from "./db";
 import type { Json } from "@/integrations/supabase/types";
 
@@ -42,6 +44,7 @@ interface Ctx {
   runEnrollment: (id: string, force?: boolean) => Promise<void>;
   addMaterial: (m: Omit<Material, "id">) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
+  uploadMaterial: (file: File, name: string) => Promise<boolean>;
   importLeads: (rows: { name: string; phone: string; budget: number | null; tag: string | null }[]) => Promise<number>;
 }
 
@@ -62,7 +65,12 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   const [activeId, setActiveId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const apiRef = useRef<Ctx | null>(null);
-  const runRef = useRef<(id: string, force?: boolean) => Promise<void>>(async () => {});
+  const runNow = useServerFn(runFlowNow);
+  const runRef = useRef<(id: string, force: boolean) => Promise<void>>(async () => {});
+  runRef.current = async (id, force) => {
+    try { await runNow({ data: { id, force } }); } catch (e) { console.error(e); toast.error("No se pudo ejecutar el flujo"); }
+    await reload();
+  };
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -90,7 +98,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       appointments: (ap.data ?? []).map(toAppointment),
       flows: (fl.data ?? []).map(toFlow),
       enrollments: (en.data ?? []).map(toEnrollment),
-      materials: (ma.data ?? []).map((r) => ({ id: r.id, accountId: r.account_id, name: r.name, kind: r.kind as Material["kind"], url: r.url })),
+      materials: (ma.data ?? []).map((r) => ({ id: r.id, accountId: r.account_id, name: r.name, kind: r.kind as Material["kind"], url: r.url, storagePath: r.storage_path })),
     });
     setLoading(false);
   }, []);
@@ -185,19 +193,33 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         const enr = toEnrollment(data);
         stateRef.current = { ...stateRef.current, enrollments: [enr, ...stateRef.current.enrollments] };
         setState((s) => ({ ...s, enrollments: [enr, ...s.enrollments] }));
-        await runRef.current(enr.id);
+        await runRef.current(enr.id, false);
       },
       cancelEnrollment: async (id, reason) => {
         setState((s) => ({ ...s, enrollments: s.enrollments.map((e) => (e.id === id ? { ...e, status: "cancelled", cancelReason: reason } : e)) }));
         fail("cancelar el flujo", (await supabase.from("flow_enrollments").update({ status: "cancelled", cancel_reason: reason }).eq("id", id)).error);
       },
-      runEnrollment: (id, force) => runRef.current(id, force),
+      runEnrollment: (id, force) => runRef.current(id, !!force),
       addMaterial: async (m) => {
         const { data, error } = await supabase.from("materials").insert({ account_id: m.accountId, name: m.name, kind: m.kind, url: m.url }).select().single();
         if (error || !data) return fail("guardar el material", error);
         setState((s) => ({ ...s, materials: [...s.materials, { ...m, id: data.id }] }));
       },
+      uploadMaterial: async (file, name) => {
+        const kind: Material["kind"] = file.type === "application/pdf" ? "pdf" : file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "pdf";
+        const path = `${account.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-80)}`;
+        const up = await supabase.storage.from("materials").upload(path, file, file.type ? { contentType: file.type } : {});
+        if (up.error) { fail("subir el archivo", up.error); return false; }
+        const sig = await supabase.storage.from("materials").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+        if (sig.error || !sig.data) { fail("generar el enlace", sig.error); return false; }
+        const { data, error } = await supabase.from("materials").insert({ account_id: account.id, name, kind, url: sig.data.signedUrl, storage_path: path }).select().single();
+        if (error || !data) { fail("guardar el material", error); return false; }
+        setState((s) => ({ ...s, materials: [...s.materials, { id: data.id, accountId: account.id, name, kind, url: data.url, storagePath: path }] }));
+        return true;
+      },
       deleteMaterial: async (id) => {
+        const m = stateRef.current.materials.find((x) => x.id === id);
+        if (m?.storagePath) await supabase.storage.from("materials").remove([m.storagePath]);
         setState((s) => ({ ...s, materials: s.materials.filter((m) => m.id !== id) }));
         fail("eliminar el material", (await supabase.from("materials").delete().eq("id", id)).error);
       },
@@ -233,93 +255,11 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   }, [state, activeId, loading, reload]);
   apiRef.current = value;
 
-  /* ---------- Motor de flujos ---------- */
-  const running = useRef(new Set<string>());
-  const patchEnr = async (id: string, patch: Partial<Enrollment>) => {
-    setState((s) => ({ ...s, enrollments: s.enrollments.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
-    const row: { status?: string; current_step?: number; next_run_at?: string; replied?: boolean; cancel_reason?: string | null } = {};
-    if (patch.status) row.status = patch.status;
-    if (patch.currentStep !== undefined) row.current_step = patch.currentStep;
-    if (patch.nextRunAt) row.next_run_at = patch.nextRunAt;
-    if (patch.replied !== undefined) row.replied = patch.replied;
-    if (patch.cancelReason !== undefined) row.cancel_reason = patch.cancelReason;
-    await supabase.from("flow_enrollments").update(row).eq("id", id);
-  };
-
-  runRef.current = async (id, force) => {
-    if (running.current.has(id)) return;
-    const s0 = stateRef.current;
-    const enr = s0.enrollments.find((e) => e.id === id);
-    if (!enr || enr.status !== "active") return;
-    if (!force && new Date(enr.nextRunAt).getTime() > Date.now()) return;
-    const flow = s0.flows.find((f) => f.id === enr.flowId);
-    if (!flow) return void patchEnr(id, { status: "cancelled", cancelReason: "Flujo eliminado" });
-    running.current.add(id);
-    try {
-      const api = apiRef.current!;
-      for (let i = enr.currentStep; i < flow.steps.length; i++) {
-        const st: FlowStep = flow.steps[i]!;
-        const lead = stateRef.current.leads.find((l) => l.id === enr.leadId);
-        const cur = stateRef.current.enrollments.find((e) => e.id === id);
-        if (!lead || cur?.status !== "active") return;
-        const appt = stateRef.current.appointments.filter((a) => a.leadId === lead.id && a.status === "programada" && new Date(a.at).getTime() > Date.now()).sort((a, b) => a.at.localeCompare(b.at))[0];
-        const account = stateRef.current.accounts.find((a) => a.id === lead.accountId)!;
-        if (st.type === "message") {
-          const material = stateRef.current.materials.find((m) => m.id === st.materialId);
-          await api.addMessage(lead.id, "bot", renderText(st.text, { lead, account, appointment: appt, material }));
-        } else if (st.type === "action") {
-          api.updateLead(lead.id, (l) => (st.action === "add_tag" ? applyTag(l, st.value) : st.action === "remove_tag" ? removeTag(l, st.value) : moveToStage(l, Number(st.value))));
-        } else {
-          let target = Date.now() + waitMs(st.amount, st.unit);
-          if (st.type === "wait_appt") {
-            if (!appt) continue;
-            target = new Date(appt.at).getTime() - waitMs(st.amount, st.unit);
-            if (target <= Date.now()) continue;
-          }
-          if (force && i === enr.currentStep && st.type === "wait") continue; // "ejecutar ahora" salta la espera actual
-          return void (await patchEnr(id, { currentStep: i + 1, nextRunAt: new Date(target).toISOString() }));
-        }
-      }
-      await patchEnr(id, { status: "completed", currentStep: flow.steps.length });
-    } finally {
-      running.current.delete(id);
-    }
-  };
-
-  // Disparadores + regla anti-spam: compara cada lead con su última foto.
-  const snap = useRef<Map<string, { stage: number; tags: string[]; msgs: number }> | null>(null);
+  // Los flujos corren en el servidor 24/7; aquí solo refrescamos para ver su avance.
   useEffect(() => {
-    if (loading) return;
-    const cur = new Map(state.leads.map((l) => [l.id, { stage: l.stage, tags: l.tags, msgs: l.messages.length }]));
-    const prevSnap = snap.current;
-    snap.current = cur;
-    if (!prevSnap) return;
-    const api = apiRef.current!;
-    for (const l of state.leads) {
-      const prev = prevSnap.get(l.id);
-      for (const f of matchTriggers(state.flows, prev, l)) void api.enroll(f.id, l.id);
-      if (!prev) continue;
-      const fresh = l.messages.slice(prev.msgs).filter((m) => m.from !== "bot");
-      if (!fresh.length) continue;
-      const who = fresh.some((m) => m.from === "asesor") ? "Intervino un asesor" : "Respondió el prospecto";
-      for (const e of state.enrollments) {
-        if (e.leadId !== l.id || e.status !== "active") continue;
-        const flow = state.flows.find((f) => f.id === e.flowId);
-        if (flow?.stopOnReply) {
-          void patchEnr(e.id, { replied: true, status: "cancelled", cancelReason: who });
-          toast(`Flujo «${flow.name}» cancelado: ${who.toLowerCase()}`);
-        } else if (!e.replied) void patchEnr(e.id, { replied: true });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.leads, loading]);
-
-  useEffect(() => {
-    const t = setInterval(() => {
-      for (const e of stateRef.current.enrollments) if (e.status === "active" && new Date(e.nextRunAt).getTime() <= Date.now()) void runRef.current(e.id);
-    }, 15_000);
+    const t = setInterval(() => { if (document.visibilityState === "visible") void reload(); }, 20_000);
     return () => clearInterval(t);
-  }, []);
+  }, [reload]);
 
   return <CrmContext.Provider value={value}>{children}</CrmContext.Provider>;
 }
