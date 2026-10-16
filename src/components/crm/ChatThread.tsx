@@ -26,7 +26,7 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
             <div key={m.id} className={startGroup ? "mt-3" : "mt-[2px]"}>
               {newBlock && (
                 <div className="mb-3 mt-2 text-center text-[11px] font-medium text-muted-foreground" suppressHydrationWarning>
-                  <span className="capitalize">{day(m.at)}</span> · {time(m.at)}
+                  <span className="inline-block first-letter:uppercase">{day(m.at)}</span> · {time(m.at)}
                 </div>
               )}
               {startGroup && mine && (
