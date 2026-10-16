@@ -237,12 +237,12 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   const running = useRef(new Set<string>());
   const patchEnr = async (id: string, patch: Partial<Enrollment>) => {
     setState((s) => ({ ...s, enrollments: s.enrollments.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
-    const row: Record<string, unknown> = {};
-    if (patch.status) row["status"] = patch.status;
-    if (patch.currentStep !== undefined) row["current_step"] = patch.currentStep;
-    if (patch.nextRunAt) row["next_run_at"] = patch.nextRunAt;
-    if (patch.replied !== undefined) row["replied"] = patch.replied;
-    if (patch.cancelReason !== undefined) row["cancel_reason"] = patch.cancelReason;
+    const row: { status?: string; current_step?: number; next_run_at?: string; replied?: boolean; cancel_reason?: string | null } = {};
+    if (patch.status) row.status = patch.status;
+    if (patch.currentStep !== undefined) row.current_step = patch.currentStep;
+    if (patch.nextRunAt) row.next_run_at = patch.nextRunAt;
+    if (patch.replied !== undefined) row.replied = patch.replied;
+    if (patch.cancelReason !== undefined) row.cancel_reason = patch.cancelReason;
     await supabase.from("flow_enrollments").update(row).eq("id", id);
   };
 

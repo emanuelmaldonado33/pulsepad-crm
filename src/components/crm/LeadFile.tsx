@@ -74,7 +74,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         )}
       </section>
 
-      <LeadFlows leadId={lead.id} testMode={readOnly} />
+      <LeadFlows leadId={lead.id} testMode={!!readOnly} />
 
       <section>
         <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Etiquetas</div>
