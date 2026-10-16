@@ -15,6 +15,7 @@ import { Route as ConfiguracionRouteImport } from './routes/configuracion'
 import { Route as FlujosRouteImport } from './routes/flujos'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as SimuladorRouteImport } from './routes/simulador'
+import { Route as ApiPublicFlowsTickRouteImport } from './routes/api/public/flows-tick'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const SimuladorRoute = SimuladorRouteImport.update({
   path: '/simulador',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicFlowsTickRoute = ApiPublicFlowsTickRouteImport.update({
+  id: '/api/public/flows-tick',
+  path: '/api/public/flows-tick',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
+  '/api/public/flows-tick': typeof ApiPublicFlowsTickRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
+  '/api/public/flows-tick': typeof ApiPublicFlowsTickRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,13 +79,27 @@ export interface FileRoutesById {
   '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
+  '/api/public/flows-tick': typeof ApiPublicFlowsTickRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/citas' | '/configuracion' | '/flujos' | '/inbox' | '/simulador'
+    | '/'
+    | '/citas'
+    | '/configuracion'
+    | '/flujos'
+    | '/inbox'
+    | '/simulador'
+    | '/api/public/flows-tick'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/citas' | '/configuracion' | '/flujos' | '/inbox' | '/simulador'
+  to:
+    | '/'
+    | '/citas'
+    | '/configuracion'
+    | '/flujos'
+    | '/inbox'
+    | '/simulador'
+    | '/api/public/flows-tick'
   id:
     | '__root__'
     | '/'
@@ -86,6 +108,7 @@ export interface FileRouteTypes {
     | '/flujos'
     | '/inbox'
     | '/simulador'
+    | '/api/public/flows-tick'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -95,6 +118,7 @@ export interface RootRouteChildren {
   FlujosRoute: typeof FlujosRoute
   InboxRoute: typeof InboxRoute
   SimuladorRoute: typeof SimuladorRoute
+  ApiPublicFlowsTickRoute: typeof ApiPublicFlowsTickRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -141,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SimuladorRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/flows-tick': {
+      id: '/api/public/flows-tick'
+      path: '/api/public/flows-tick'
+      fullPath: '/api/public/flows-tick'
+      preLoaderRoute: typeof ApiPublicFlowsTickRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -151,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   FlujosRoute: FlujosRoute,
   InboxRoute: InboxRoute,
   SimuladorRoute: SimuladorRoute,
+  ApiPublicFlowsTickRoute: ApiPublicFlowsTickRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
