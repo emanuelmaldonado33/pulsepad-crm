@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useState, type CSSProperties, type ReactNode } from "react";
 import { NewAccountDialog } from "./NewAccountDialog";
-import { CalendarDays, FlaskConical, KanbanSquare, LogOut, MessageCircle, Plus, Settings2 } from "lucide-react";
+import { CalendarDays, FlaskConical, KanbanSquare, LogOut, MessageCircle, Plus, Settings2, Workflow } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useCrm } from "@/lib/crm/store";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
@@ -12,6 +12,7 @@ const NAV = [
   { to: "/inbox", label: "Bandeja", icon: MessageCircle },
   { to: "/simulador", label: "Simulador", icon: FlaskConical },
   { to: "/citas", label: "Citas", icon: CalendarDays },
+  { to: "/flujos", label: "Flujos", icon: Workflow },
   { to: "/configuracion", label: "Configuración IA", icon: Settings2 },
 ] as const;
 

@@ -1,4 +1,5 @@
 import type { Database } from "@/integrations/supabase/types";
+import type { Enrollment, Flow } from "./flows";
 import type { Account, Appointment, Lead, Message } from "./types";
 
 type T = Database["public"]["Tables"];
@@ -33,4 +34,14 @@ export const leadPatch = (l: Lead) => ({
 export const toAppointment = (r: AppointmentRow): Appointment => ({
   id: r.id, accountId: r.account_id, leadId: r.lead_id, at: r.at,
   kind: r.kind as Appointment["kind"], status: r.status as Appointment["status"],
+});
+
+export const toFlow = (r: T["flows"]["Row"]): Flow => ({
+  id: r.id, accountId: r.account_id, name: r.name, active: r.active, triggerType: r.trigger_type as Flow["triggerType"],
+  triggerValue: r.trigger_value, steps: (Array.isArray(r.steps) ? r.steps : []) as unknown as Flow["steps"], stopOnReply: r.stop_on_reply,
+});
+
+export const toEnrollment = (r: T["flow_enrollments"]["Row"]): Enrollment => ({
+  id: r.id, flowId: r.flow_id, leadId: r.lead_id, accountId: r.account_id, status: r.status as Enrollment["status"],
+  currentStep: r.current_step, nextRunAt: r.next_run_at, replied: r.replied, cancelReason: r.cancel_reason, createdAt: r.created_at,
 });

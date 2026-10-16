@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CitasRouteImport } from './routes/citas'
 import { Route as ConfiguracionRouteImport } from './routes/configuracion'
+import { Route as FlujosRouteImport } from './routes/flujos'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as SimuladorRouteImport } from './routes/simulador'
 
@@ -30,6 +31,11 @@ const ConfiguracionRoute = ConfiguracionRouteImport.update({
   path: '/configuracion',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FlujosRoute = FlujosRouteImport.update({
+  id: '/flujos',
+  path: '/flujos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
   '/configuracion': typeof ConfiguracionRoute
+  '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
   '/configuracion': typeof ConfiguracionRoute
+  '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
 }
@@ -60,21 +68,31 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
   '/configuracion': typeof ConfiguracionRoute
+  '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/citas' | '/configuracion' | '/inbox' | '/simulador'
+  fullPaths:
+    '/' | '/citas' | '/configuracion' | '/flujos' | '/inbox' | '/simulador'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/citas' | '/configuracion' | '/inbox' | '/simulador'
-  id: '__root__' | '/' | '/citas' | '/configuracion' | '/inbox' | '/simulador'
+  to: '/' | '/citas' | '/configuracion' | '/flujos' | '/inbox' | '/simulador'
+  id:
+    | '__root__'
+    | '/'
+    | '/citas'
+    | '/configuracion'
+    | '/flujos'
+    | '/inbox'
+    | '/simulador'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CitasRoute: typeof CitasRoute
   ConfiguracionRoute: typeof ConfiguracionRoute
+  FlujosRoute: typeof FlujosRoute
   InboxRoute: typeof InboxRoute
   SimuladorRoute: typeof SimuladorRoute
 }
@@ -102,6 +120,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConfiguracionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/flujos': {
+      id: '/flujos'
+      path: '/flujos'
+      fullPath: '/flujos'
+      preLoaderRoute: typeof FlujosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/inbox': {
       id: '/inbox'
       path: '/inbox'
@@ -123,6 +148,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CitasRoute: CitasRoute,
   ConfiguracionRoute: ConfiguracionRoute,
+  FlujosRoute: FlujosRoute,
   InboxRoute: InboxRoute,
   SimuladorRoute: SimuladorRoute,
 }

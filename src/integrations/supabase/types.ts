@@ -158,6 +158,111 @@ export type Database = {
           },
         ]
       }
+      flow_enrollments: {
+        Row: {
+          account_id: string
+          cancel_reason: string | null
+          created_at: string
+          current_step: number
+          flow_id: string
+          id: string
+          lead_id: string
+          next_run_at: string
+          replied: boolean
+          status: string
+        }
+        Insert: {
+          account_id: string
+          cancel_reason?: string | null
+          created_at?: string
+          current_step?: number
+          flow_id: string
+          id?: string
+          lead_id: string
+          next_run_at?: string
+          replied?: boolean
+          status?: string
+        }
+        Update: {
+          account_id?: string
+          cancel_reason?: string | null
+          created_at?: string
+          current_step?: number
+          flow_id?: string
+          id?: string
+          lead_id?: string
+          next_run_at?: string
+          replied?: boolean
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flow_enrollments_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_enrollments_flow_id_fkey"
+            columns: ["flow_id"]
+            isOneToOne: false
+            referencedRelation: "flows"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "flow_enrollments_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      flows: {
+        Row: {
+          account_id: string
+          active: boolean
+          created_at: string
+          id: string
+          name: string
+          steps: Json
+          stop_on_reply: boolean
+          trigger_type: string
+          trigger_value: string
+        }
+        Insert: {
+          account_id: string
+          active?: boolean
+          created_at?: string
+          id?: string
+          name: string
+          steps?: Json
+          stop_on_reply?: boolean
+          trigger_type?: string
+          trigger_value?: string
+        }
+        Update: {
+          account_id?: string
+          active?: boolean
+          created_at?: string
+          id?: string
+          name?: string
+          steps?: Json
+          stop_on_reply?: boolean
+          trigger_type?: string
+          trigger_value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "flows_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           account_id: string
@@ -213,6 +318,41 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "leads_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      materials: {
+        Row: {
+          account_id: string
+          created_at: string
+          id: string
+          kind: string
+          name: string
+          url: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          id?: string
+          kind?: string
+          name: string
+          url: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          name?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "materials_account_id_fkey"
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
