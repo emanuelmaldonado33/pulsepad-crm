@@ -167,6 +167,7 @@ export type Database = {
           flow_id: string
           id: string
           lead_id: string
+          locked_until: string | null
           next_run_at: string
           replied: boolean
           status: string
@@ -179,6 +180,7 @@ export type Database = {
           flow_id: string
           id?: string
           lead_id: string
+          locked_until?: string | null
           next_run_at?: string
           replied?: boolean
           status?: string
@@ -191,6 +193,7 @@ export type Database = {
           flow_id?: string
           id?: string
           lead_id?: string
+          locked_until?: string | null
           next_run_at?: string
           replied?: boolean
           status?: string
