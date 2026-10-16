@@ -9,6 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { WhatsAppChannel } from "@/components/crm/WhatsAppChannel";
 
 export const Route = createFileRoute("/configuracion")({
   head: () => ({
@@ -31,6 +33,22 @@ const MODELS = [
 interface UsageRow { model: string; input_tokens: number; output_tokens: number; total_tokens: number; created_at: string }
 
 function Config() {
+  const { account } = useCrm();
+  return (
+    <div className="mx-auto w-full max-w-5xl p-4 lg:p-6">
+      <Tabs defaultValue="ia">
+        <TabsList>
+          <TabsTrigger value="ia">IA y marca</TabsTrigger>
+          <TabsTrigger value="whatsapp">Canal WhatsApp</TabsTrigger>
+        </TabsList>
+        <TabsContent value="ia"><AiConfig /></TabsContent>
+        <TabsContent value="whatsapp" className="mt-4"><WhatsAppChannel key={account.id} accountId={account.id} /></TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function AiConfig() {
   const { account, updateAccount } = useCrm();
   const [draft, setDraft] = useState<Account>(account);
   const [usage, setUsage] = useState<UsageRow[]>([]);
@@ -49,7 +67,7 @@ function Config() {
   const today = usage.filter((u) => new Date(u.created_at).getTime() > since);
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-6 p-4 lg:p-6">
+    <div className="space-y-6 pt-4">
       <div className="flex items-end gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Configuración de IA · {account.name}</h1>
