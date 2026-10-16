@@ -208,7 +208,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       uploadMaterial: async (file, name) => {
         const kind: Material["kind"] = file.type === "application/pdf" ? "pdf" : file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "pdf";
         const path = `${account.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-80)}`;
-        const up = await supabase.storage.from("materials").upload(path, file, { contentType: file.type || undefined });
+        const up = await supabase.storage.from("materials").upload(path, file, file.type ? { contentType: file.type } : {});
         if (up.error) { fail("subir el archivo", up.error); return false; }
         const sig = await supabase.storage.from("materials").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
         if (sig.error || !sig.data) { fail("generar el enlace", sig.error); return false; }
