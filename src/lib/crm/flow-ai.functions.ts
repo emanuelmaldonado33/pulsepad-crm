@@ -53,7 +53,7 @@ Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con un
       return { error: "La IA no pudo generar el flujo." };
     }
     await sb.from("ai_usage").insert({ account_id: acc.id, model: FLOW_AI_MODEL, input_tokens: out.usage.input, output_tokens: out.usage.output, total_tokens: out.usage.total });
-    if (out.finish === "content-filter" || !out.text.trim()) return { error: "La IA rechazó esta solicitud. Reformula la descripción del flujo." };
+    if (out.finish === "content-filter" || !out.text.trim()) return { error: "La IA rechazó esta solicitud y no generó un flujo." };
     try {
       return { draft: extractJson(out.text) as Record<string, unknown> };
     } catch {

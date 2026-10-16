@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { Copy, FileText, Image as ImageIcon, Upload, Pencil, Plus, Trash2, Video, Workflow } from "lucide-react";
+import { Download, FileUp, Sparkles, Copy, FileText, Image as ImageIcon, Upload, Pencil, Plus, Trash2, Video, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import { useCrm } from "@/lib/crm/store";
 import { STAGES } from "@/lib/crm/types";
 import { FLOW_TEMPLATES, triggerLabel, type Flow, type Material } from "@/lib/crm/flows";
 import { FlowEditor } from "@/components/crm/FlowEditor";
+import { AiFlowDialog, ImportFlowDialog } from "@/components/crm/FlowAiImport";
+import { exportFlow } from "@/lib/crm/flow-io";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,16 @@ const stageName = (n: number) => `${STAGES[n]?.code ?? "P?"} ${STAGES[n]?.name ?
 function Flows() {
   const { account, flows, enrollments, materials, saveFlow, deleteFlow, addMaterial, deleteMaterial, uploadMaterial } = useCrm();
   const [editing, setEditing] = useState<{ flow: Flow; isNew: boolean } | null>(null);
+  const [dialog, setDialog] = useState<"ai" | "import" | null>(null);
+  const download = (f: Flow) => {
+    const data = exportFlow(f, (id) => materials.find((m) => m.id === id)?.name ?? null);
+    const url = URL.createObjectURL(new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${f.name.normalize("NFD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").toLowerCase() || "flujo"}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
   const blank = (): Flow => ({ id: "", accountId: account.id, name: "Nuevo flujo", active: false, triggerType: "new_lead", triggerValue: "", steps: [], stopOnReply: true });
 
   return (
@@ -40,7 +52,11 @@ function Flows() {
           <h1 className="font-display text-2xl font-semibold">Flujos · {account.name}</h1>
           <p className="text-sm text-muted-foreground">Seguimientos automáticos paso a paso. Se ejecutan en el servidor 24/7, aunque nadie tenga el CRM abierto.</p>
         </div>
-        <Button className="ml-auto" onClick={() => setEditing({ flow: blank(), isNew: true })}><Plus className="mr-1 h-4 w-4" /> Nuevo flujo</Button>
+        <div className="ml-auto flex flex-wrap gap-2">
+          <Button variant="outline" onClick={() => setDialog("import")}><FileUp className="mr-1 h-4 w-4" /> Importar flujo</Button>
+          <Button variant="outline" onClick={() => setDialog("ai")}><Sparkles className="mr-1 h-4 w-4" /> Crear flujo con IA</Button>
+          <Button onClick={() => setEditing({ flow: blank(), isNew: true })}><Plus className="mr-1 h-4 w-4" /> Nuevo flujo</Button>
+        </div>
       </div>
 
       <Tabs defaultValue="flujos">
@@ -67,6 +83,7 @@ function Flows() {
                 <Stat k="Total" v={String(all.length)} />
                 <Stat k="Tasa de respuesta" v={rate == null ? "—" : `${rate}%`} />
                 <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${f.active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>{f.active ? "Activo" : "Inactivo"}</span>
+                <Button size="icon" variant="ghost" onClick={() => download(f)} aria-label="Descargar flujo" title="Descargar .json"><Download className="h-4 w-4" /></Button>
                 <Button size="icon" variant="ghost" onClick={() => setEditing({ flow: f, isNew: false })} aria-label="Editar"><Pencil className="h-4 w-4" /></Button>
                 <Button size="icon" variant="ghost" className="text-destructive" onClick={() => confirm(`¿Eliminar «${f.name}»?`) && void deleteFlow(f.id)} aria-label="Eliminar"><Trash2 className="h-4 w-4" /></Button>
               </div>
@@ -94,6 +111,12 @@ function Flows() {
         </TabsContent>
       </Tabs>
 
+      {dialog === "ai" && (
+        <AiFlowDialog accountId={account.id} materials={materials} onClose={() => setDialog(null)} onDraft={(f) => { setDialog(null); setEditing({ flow: f, isNew: true }); toast.success("Flujo generado: revísalo y guárdalo"); }} />
+      )}
+      {dialog === "import" && (
+        <ImportFlowDialog accountId={account.id} materials={materials} onClose={() => setDialog(null)} onImport={async (f) => { const ok = await saveFlow(f, true); if (ok) toast.success(`«${f.name}» importado (inactivo)`); return ok; }} />
+      )}
       {editing && (
         <FlowEditor flow={editing.flow} materials={materials} onClose={() => setEditing(null)} onSave={(f) => saveFlow(f, editing.isNew)} />
       )}
