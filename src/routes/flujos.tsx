@@ -46,9 +46,9 @@ function Flows() {
 
   return (
     <div className="mx-auto w-full max-w-6xl p-4 lg:p-6">
-      <div className="mb-4 flex items-center gap-3">
+      <div className="mb-6 flex flex-wrap items-center gap-3">
         <Workflow className="h-6 w-6 text-primary" />
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="font-display text-2xl font-semibold">Flujos · {account.name}</h1>
           <p className="text-sm text-muted-foreground">Seguimientos automáticos paso a paso. Se ejecutan en el servidor 24/7, aunque nadie tenga el CRM abierto.</p>
         </div>

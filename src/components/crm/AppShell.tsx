@@ -46,7 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div style={brandVars} className="flex min-h-screen flex-col">
-      <header className="glass sticky top-0 z-30 border-x-0 border-t-0">
+      <header className="glass sticky top-0 z-30 !border-x-0 !border-t-0">
         <div className="flex h-16 items-center gap-4 px-4 lg:px-6">
           <Select value={account.id} onValueChange={setAccount}>
             <SelectTrigger className="press h-11 w-64 rounded-xl border-0 bg-transparent px-1.5 shadow-none hover:bg-accent focus:ring-0" aria-label="Subcuenta">
