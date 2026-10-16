@@ -16,6 +16,7 @@ import { Route as FlujosRouteImport } from './routes/flujos'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as SimuladorRouteImport } from './routes/simulador'
 import { Route as ApiPublicFlowsTickRouteImport } from './routes/api/public/flows-tick'
+import { Route as ApiPublicWhatsappWebhookRouteImport } from './routes/api/public/whatsapp/webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -52,6 +53,12 @@ const ApiPublicFlowsTickRoute = ApiPublicFlowsTickRouteImport.update({
   path: '/api/public/flows-tick',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiPublicWhatsappWebhookRoute =
+  ApiPublicWhatsappWebhookRouteImport.update({
+    id: '/api/public/whatsapp/webhook',
+    path: '/api/public/whatsapp/webhook',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -61,6 +68,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
   '/api/public/flows-tick': typeof ApiPublicFlowsTickRoute
+  '/api/public/whatsapp/webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -70,6 +78,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
   '/api/public/flows-tick': typeof ApiPublicFlowsTickRoute
+  '/api/public/whatsapp/webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -80,6 +89,7 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
   '/api/public/flows-tick': typeof ApiPublicFlowsTickRoute
+  '/api/public/whatsapp/webhook': typeof ApiPublicWhatsappWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -91,6 +101,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/simulador'
     | '/api/public/flows-tick'
+    | '/api/public/whatsapp/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -100,6 +111,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/simulador'
     | '/api/public/flows-tick'
+    | '/api/public/whatsapp/webhook'
   id:
     | '__root__'
     | '/'
@@ -109,6 +121,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/simulador'
     | '/api/public/flows-tick'
+    | '/api/public/whatsapp/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -119,6 +132,7 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   SimuladorRoute: typeof SimuladorRoute
   ApiPublicFlowsTickRoute: typeof ApiPublicFlowsTickRoute
+  ApiPublicWhatsappWebhookRoute: typeof ApiPublicWhatsappWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -172,6 +186,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiPublicFlowsTickRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/public/whatsapp/webhook': {
+      id: '/api/public/whatsapp/webhook'
+      path: '/api/public/whatsapp/webhook'
+      fullPath: '/api/public/whatsapp/webhook'
+      preLoaderRoute: typeof ApiPublicWhatsappWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -183,6 +204,7 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   SimuladorRoute: SimuladorRoute,
   ApiPublicFlowsTickRoute: ApiPublicFlowsTickRoute,
+  ApiPublicWhatsappWebhookRoute: ApiPublicWhatsappWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
