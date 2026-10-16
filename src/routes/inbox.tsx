@@ -67,7 +67,7 @@ function Inbox() {
                 onClick={() => navigate({ to: "/inbox", search: { lead: l.id } })}
                 className={`press flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors duration-200 ${active ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
               >
-                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold ${active ? "bg-primary-foreground/20" : "bg-gradient-to-b from-muted-foreground/40 to-muted-foreground/60 text-background"}`}>
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold ${active ? "bg-primary-foreground/20" : "bg-linear-to-b from-muted-foreground/40 to-muted-foreground/60 text-background"}`}>
                   {initials(l.name)}
                 </span>
                 <span className="min-w-0 flex-1">
@@ -89,7 +89,7 @@ function Inbox() {
       {lead ? (
         <section className="flex min-h-0 flex-col">
           <div className="glass flex items-center gap-3 !border-x-0 !border-t-0 px-5 py-2.5 !shadow-none">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-b from-muted-foreground/40 to-muted-foreground/60 text-[11px] font-semibold text-background">{initials(lead.name)}</span>
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-linear-to-b from-muted-foreground/40 to-muted-foreground/60 text-[11px] font-semibold text-background">{initials(lead.name)}</span>
             <div className="leading-tight">
               <div className="text-[14px] font-semibold">{lead.name}</div>
               <div className="tabular text-[11px] text-muted-foreground">{lead.phone} · {stageLabel(lead)}</div>
