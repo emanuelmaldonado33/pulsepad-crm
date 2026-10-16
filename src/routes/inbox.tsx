@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Send } from "lucide-react";
+import { Paperclip, Send } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
 import { setBot } from "@/lib/crm/automation";
 import { ChatThread } from "@/components/crm/ChatThread";
@@ -23,7 +23,7 @@ export const Route = createFileRoute("/inbox")({
 });
 
 function Inbox() {
-  const { leads, updateLead, addMessage } = useCrm();
+  const { leads, updateLead, addMessage, materials } = useCrm();
   const { lead: leadParam } = Route.useSearch();
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -81,6 +81,17 @@ function Inbox() {
               send();
             }}
           >
+            {materials.length > 0 && (
+              <select
+                aria-label="Adjuntar material"
+                className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-background text-transparent"
+                value=""
+                onChange={(e) => { const m = materials.find((x) => x.id === e.target.value); if (m) setText((t) => `${t}${t ? " " : ""}${m.kind === "video" ? "🎥" : "📄"} ${m.name}: ${m.url}`); }}
+              >
+                <option value="">📎</option>
+                {materials.map((m) => <option key={m.id} value={m.id} className="text-foreground">{m.kind === "video" ? "🎥" : "📄"} {m.name}</option>)}
+              </select>
+            )}
             <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={lead.botActive ? "Escribe como asesor (el bot sigue activo)…" : "Escribe como asesor…"} />
             <Button type="submit" size="icon" aria-label="Enviar"><Send className="h-4 w-4" /></Button>
           </form>

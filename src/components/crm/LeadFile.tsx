@@ -4,6 +4,7 @@ import { STAGES, type Lead } from "@/lib/crm/types";
 import { TAG_RULES, applyTag, removeTag } from "@/lib/crm/automation";
 import { TagChip } from "./AppShell";
 import { QuoteCalculator } from "./QuoteCalculator";
+import { LeadFlows } from "./LeadFlows";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
@@ -72,6 +73,8 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
           </>
         )}
       </section>
+
+      <LeadFlows leadId={lead.id} testMode={readOnly} />
 
       <section>
         <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Etiquetas</div>
