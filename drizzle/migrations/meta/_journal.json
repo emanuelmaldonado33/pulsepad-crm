@@ -43,6 +43,13 @@
       "when": 1792109535551,
       "tag": "0005_materials_private_read",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792109544789,
+      "tag": "0006_materials_storage_path",
+      "breakpoints": true
     }
   ]
 }

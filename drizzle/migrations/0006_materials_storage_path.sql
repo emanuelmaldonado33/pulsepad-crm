@@ -1,0 +1,1 @@
+ALTER TABLE public.materials ADD COLUMN storage_path text;
