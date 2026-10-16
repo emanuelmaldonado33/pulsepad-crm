@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Send } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
 import { setBot } from "@/lib/crm/automation";
+import { materialIcon } from "@/lib/crm/flows";
 import { ChatThread } from "@/components/crm/ChatThread";
 import { LeadFile, stageLabel } from "@/components/crm/LeadFile";
 import { Switch } from "@/components/ui/switch";
@@ -86,10 +87,10 @@ function Inbox() {
                 aria-label="Adjuntar material"
                 className="h-9 w-10 shrink-0 cursor-pointer rounded-md border border-input bg-background text-transparent"
                 value=""
-                onChange={(e) => { const m = materials.find((x) => x.id === e.target.value); if (m) setText((t) => `${t}${t ? " " : ""}${m.kind === "video" ? "🎥" : "📄"} ${m.name}: ${m.url}`); }}
+                onChange={(e) => { const m = materials.find((x) => x.id === e.target.value); if (m) setText((t) => `${t}${t ? " " : ""}${materialIcon(m.kind)} ${m.name}: ${m.url}`); }}
               >
                 <option value="">📎</option>
-                {materials.map((m) => <option key={m.id} value={m.id} className="text-foreground">{m.kind === "video" ? "🎥" : "📄"} {m.name}</option>)}
+                {materials.map((m) => <option key={m.id} value={m.id} className="text-foreground">{materialIcon(m.kind)} {m.name}</option>)}
               </select>
             )}
             <Input value={text} onChange={(e) => setText(e.target.value)} placeholder={lead.botActive ? "Escribe como asesor (el bot sigue activo)…" : "Escribe como asesor…"} />

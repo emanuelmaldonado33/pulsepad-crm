@@ -37,8 +37,9 @@ export interface Material {
   id: string;
   accountId: string;
   name: string;
-  kind: "video" | "pdf";
+  kind: "video" | "pdf" | "image";
   url: string;
+  storagePath?: string | null;
 }
 
 export const sid = () => Math.random().toString(36).slice(2, 10);
@@ -61,7 +62,7 @@ export function renderText(text: string, ctx: { lead: Lead; account: Account; ap
     cita: appointment ? new Date(appointment.at).toLocaleString("es-MX", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "tu cita",
   };
   let out = text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => vars[k] ?? m);
-  if (ctx.material) out += `\n\n${ctx.material.kind === "video" ? "🎥" : "📄"} ${ctx.material.name}: ${ctx.material.url}`;
+  if (ctx.material) out += `\n\n${materialIcon(ctx.material.kind)} ${ctx.material.name}: ${ctx.material.url}`;
   return out;
 }
 
@@ -132,3 +133,5 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     ],
   },
 ];
+
+export const materialIcon = (k: Material["kind"]) => (k === "video" ? "🎥" : k === "image" ? "🖼️" : "📄");

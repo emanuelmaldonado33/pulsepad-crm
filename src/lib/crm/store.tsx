@@ -44,6 +44,7 @@ interface Ctx {
   runEnrollment: (id: string, force?: boolean) => Promise<void>;
   addMaterial: (m: Omit<Material, "id">) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
+  uploadMaterial: (file: File, name: string) => Promise<boolean>;
   importLeads: (rows: { name: string; phone: string; budget: number | null; tag: string | null }[]) => Promise<number>;
 }
 
@@ -97,7 +98,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       appointments: (ap.data ?? []).map(toAppointment),
       flows: (fl.data ?? []).map(toFlow),
       enrollments: (en.data ?? []).map(toEnrollment),
-      materials: (ma.data ?? []).map((r) => ({ id: r.id, accountId: r.account_id, name: r.name, kind: r.kind as Material["kind"], url: r.url })),
+      materials: (ma.data ?? []).map((r) => ({ id: r.id, accountId: r.account_id, name: r.name, kind: r.kind as Material["kind"], url: r.url, storagePath: r.storage_path })),
     });
     setLoading(false);
   }, []);
@@ -204,7 +205,21 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         if (error || !data) return fail("guardar el material", error);
         setState((s) => ({ ...s, materials: [...s.materials, { ...m, id: data.id }] }));
       },
+      uploadMaterial: async (file, name) => {
+        const kind: Material["kind"] = file.type === "application/pdf" ? "pdf" : file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "pdf";
+        const path = `${account.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-80)}`;
+        const up = await supabase.storage.from("materials").upload(path, file, { contentType: file.type || undefined });
+        if (up.error) { fail("subir el archivo", up.error); return false; }
+        const sig = await supabase.storage.from("materials").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+        if (sig.error || !sig.data) { fail("generar el enlace", sig.error); return false; }
+        const { data, error } = await supabase.from("materials").insert({ account_id: account.id, name, kind, url: sig.data.signedUrl, storage_path: path }).select().single();
+        if (error || !data) { fail("guardar el material", error); return false; }
+        setState((s) => ({ ...s, materials: [...s.materials, { id: data.id, accountId: account.id, name, kind, url: data.url, storagePath: path }] }));
+        return true;
+      },
       deleteMaterial: async (id) => {
+        const m = stateRef.current.materials.find((x) => x.id === id);
+        if (m?.storagePath) await supabase.storage.from("materials").remove([m.storagePath]);
         setState((s) => ({ ...s, materials: s.materials.filter((m) => m.id !== id) }));
         fail("eliminar el material", (await supabase.from("materials").delete().eq("id", id)).error);
       },
