@@ -1,45 +1,4 @@
-/* Cotizador y parser de CSV: funciones puras. */
-
-export interface Quote {
-  price: number;
-  downPct: number;
-  downAmount: number;
-  financed: number;
-  months: number;
-  annualRate: number;
-  monthly: number;
-}
-
-export function computeQuote(price: number, downPct: number, months: number, annualRate = 0): Quote {
-  const p = Math.max(0, price || 0);
-  const pct = Math.min(100, Math.max(0, downPct || 0));
-  const downAmount = Math.round((p * pct) / 100);
-  const financed = p - downAmount;
-  const n = Math.max(0, Math.round(months || 0));
-  let monthly = 0;
-  if (n > 0) {
-    const r = (annualRate || 0) / 100 / 12;
-    monthly = r > 0 ? (financed * r) / (1 - Math.pow(1 + r, -n)) : financed / n;
-  }
-  return { price: p, downPct: pct, downAmount, financed, months: n, annualRate: annualRate || 0, monthly: Math.round(monthly) };
-}
-
-const mx = (n: number) => "$" + n.toLocaleString("es-MX");
-
-export function quoteText(q: Quote, opts: { leadName?: string; product?: string; brand?: string }) {
-  const first = opts.leadName?.split(" ")[0];
-  return [
-    `${first ? `Hola ${first}, ` : ""}te comparto tu cotización${opts.product ? ` de ${opts.product}` : ""} 📋`,
-    ``,
-    `• Precio total: ${mx(q.price)}`,
-    `• Enganche (${q.downPct}%): ${mx(q.downAmount)}`,
-    `• Saldo a financiar: ${mx(q.financed)}`,
-    q.months > 0 ? `• Plazo: ${q.months} meses${q.annualRate ? ` (tasa ${q.annualRate}% anual)` : " sin intereses"}` : `• Pago: de contado`,
-    q.months > 0 ? `• Mensualidad estimada: *${mx(q.monthly)}*` : null,
-    ``,
-    `¿Te gustaría apartar tu lugar?${opts.brand ? ` — ${opts.brand}` : ""}`,
-  ].filter((l) => l !== null).join("\n");
-}
+/* Parser de CSV de leads: funciones puras. */
 
 export interface ImportRow {
   name: string;

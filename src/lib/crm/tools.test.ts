@@ -1,19 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { computeQuote, parseLeadsTable, parseMoney } from "./tools";
-
-describe("cotizador", () => {
-  it("enganche 20% de 1,000,000 a 24 meses sin interés", () => {
-    const q = computeQuote(1_000_000, 20, 24);
-    expect(q.downAmount).toBe(200_000);
-    expect(q.monthly).toBe(33_333);
-  });
-  it("con tasa anual aplica amortización", () => {
-    expect(computeQuote(100_000, 0, 12, 12).monthly).toBe(8_885);
-  });
-  it("de contado no tiene mensualidad", () => {
-    expect(computeQuote(500_000, 100, 0).monthly).toBe(0);
-  });
-});
+import { parseLeadsTable, parseMoney } from "./tools";
 
 describe("importador CSV", () => {
   it("lee encabezados en español y montos", () => {

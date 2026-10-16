@@ -4,7 +4,6 @@ import { CalendarCheck, Phone, Video, MapPin } from "lucide-react";
 import { money, termLabel, useCrm } from "@/lib/crm/store";
 import { stageLabel } from "@/components/crm/LeadFile";
 import { TagChip } from "@/components/crm/AppShell";
-import { QuoteCalculator } from "@/components/crm/QuoteCalculator";
 import { Button } from "@/components/ui/button";
 import { applyTag } from "@/lib/crm/automation";
 import type { Lead } from "@/lib/crm/types";
@@ -129,7 +128,6 @@ function Citas() {
                 ))}
               </div>
               <div className="mt-3 text-xs text-muted-foreground">Origen: {lead.source}</div>
-              <div className="mt-5"><QuoteCalculator key={lead.id} lead={lead} /></div>
             </section>
           </div>
         </div>
