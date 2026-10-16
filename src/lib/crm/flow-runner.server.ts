@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { applyTag, moveToStage, removeTag } from "./automation";
 import { leadPatch, toAccount, toAppointment, toFlow, toLead } from "./db";
+import { dispatchMessage } from "./whatsapp.server";
 import { renderText, waitMs, type FlowStep, type Material } from "./flows";
 
 type Sb = SupabaseClient<Database>;
@@ -43,8 +44,9 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
       if (cur?.status !== "active") return "ran";
       if (st.type === "message") {
         const material = materials.find((m) => m.id === st.materialId);
-        const { error } = await sb.from("messages").insert({ lead_id: lead.id, sender: "bot", body: renderText(st.text, { lead, account, appointment: appt, material }) });
-        if (error) throw error;
+        const { data: msg, error } = await sb.from("messages").insert({ lead_id: lead.id, sender: "bot", body: renderText(st.text, { lead, account, appointment: appt, material }) }).select("id").single();
+        if (error || !msg) throw error ?? new Error("insert failed");
+        await dispatchMessage({ accountId: account.id, phone: lead.phone, source: lead.source, messageId: msg.id, text: renderText(st.text, { lead, account, appointment: appt }), material });
       } else if (st.type === "action") {
         lead = st.action === "add_tag" ? applyTag(lead, st.value) : st.action === "remove_tag" ? removeTag(lead, st.value) : moveToStage(lead, Number(st.value));
         const { error } = await sb.from("leads").update(leadPatch(lead)).eq("id", lead.id);
