@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { Bot, BotOff, MessageCircle, Search, Upload } from "lucide-react";
+import { MessageCircle, Search, Upload } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { LeadFile } from "@/components/crm/LeadFile";
@@ -9,7 +9,6 @@ import { money, useCrm } from "@/lib/crm/store";
 import { STAGES, type Lead } from "@/lib/crm/types";
 import { moveToStage } from "@/lib/crm/automation";
 import { Input } from "@/components/ui/input";
-import { TagChip } from "@/components/crm/AppShell";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
