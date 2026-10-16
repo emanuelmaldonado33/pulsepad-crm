@@ -15,7 +15,10 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
             <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm shadow-sm ${mine ? "rounded-br-sm bg-bubble-out" : "rounded-bl-sm bg-bubble-in"}`}>
               {mine && <div className="mb-0.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{m.from === "bot" ? "🤖 Bot IA" : "👤 Asesor"}</div>}
               <div className="whitespace-pre-wrap break-words">{m.text}</div>
-              <div className="mt-0.5 text-right text-[10px] text-muted-foreground" suppressHydrationWarning>{time(m.at)}</div>
+              <div className="mt-0.5 text-right text-[10px] text-muted-foreground" suppressHydrationWarning>
+                {time(m.at)}
+                {mine && m.waStatus && <span className={m.waStatus === "fallido" ? "ml-1 text-destructive" : "ml-1"}>{m.waStatus === "enviado" ? "· ✓ WhatsApp" : m.waStatus === "fallido" ? "· ✕ no enviado" : "· simulado"}</span>}
+              </div>
             </div>
           </div>
         );
