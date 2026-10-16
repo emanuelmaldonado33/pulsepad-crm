@@ -10,13 +10,13 @@ import { extractJson } from "./flow-io";
 export const generateFlowDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ accountId: z.string().min(1).max(100), prompt: z.string().trim().min(10).max(3000) }).parse(d))
-  .handler(async ({ data, context }) => {
+  .handler(async ({ data, context }): Promise<{ error: string | null; draft: string | null }> => {
     const sb = context.supabase;
     const [{ data: acc }, { data: mats }] = await Promise.all([
       sb.from("accounts").select("id, name, product, template").eq("id", data.accountId).single(),
       sb.from("materials").select("name, kind").eq("account_id", data.accountId),
     ]);
-    if (!acc) return { error: "Subcuenta no encontrada" };
+    if (!acc) return { error: "Subcuenta no encontrada", draft: null };
 
     const system = `Eres un experto en automatización de seguimiento por WhatsApp para ventas high-ticket en México.
 Diseñas flujos para la subcuenta «${acc.name}» que vende: ${acc.product || "(no especificado)"}.
@@ -47,16 +47,16 @@ Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con un
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode;
       console.error("flow AI", status, e instanceof Error ? e.message : e);
-      if (status === 402) return { error: "Sin créditos de IA disponibles. Agrega créditos en Settings → Plans & credits." };
-      if (status === 429) return { error: "Demasiadas solicitudes a la IA. Espera unos segundos e intenta de nuevo." };
-      if (status === 403) return { error: "El acceso al modelo Claude no está habilitado para este espacio de trabajo." };
-      return { error: "La IA no pudo generar el flujo." };
+      if (status === 402) return { error: "Sin créditos de IA disponibles. Agrega créditos en Settings → Plans & credits.", draft: null };
+      if (status === 429) return { error: "Demasiadas solicitudes a la IA. Espera unos segundos e intenta de nuevo.", draft: null };
+      if (status === 403) return { error: "El acceso al modelo Claude no está habilitado para este espacio de trabajo.", draft: null };
+      return { error: "La IA no pudo generar el flujo.", draft: null };
     }
     await sb.from("ai_usage").insert({ account_id: acc.id, model: FLOW_AI_MODEL, input_tokens: out.usage.input, output_tokens: out.usage.output, total_tokens: out.usage.total });
-    if (out.finish === "content-filter" || !out.text.trim()) return { error: "La IA rechazó esta solicitud y no generó un flujo." };
+    if (out.finish === "content-filter" || !out.text.trim()) return { error: "La IA rechazó esta solicitud y no generó un flujo.", draft: null };
     try {
-      return { draft: extractJson(out.text) as Record<string, unknown> };
+      return { error: null, draft: JSON.stringify(extractJson(out.text)) };
     } catch {
-      return { error: "La IA devolvió un flujo con formato inválido. Intenta de nuevo." };
+      return { error: "La IA devolvió un flujo con formato inválido. Intenta de nuevo.", draft: null };
     }
   });

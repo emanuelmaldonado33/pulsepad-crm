@@ -21,9 +21,9 @@ export function AiFlowDialog({ accountId, materials, onClose, onDraft }: { accou
     setError(null);
     try {
       const r = await gen({ data: { accountId, prompt } });
-      if ("error" in r && r.error) return setError(r.error);
-      if (!("draft" in r) || !r.draft) return setError("La IA no devolvió un flujo.");
-      onDraft(parseFlow(r.draft, accountId, materials));
+      if (r.error) return setError(r.error);
+      if (!r.draft) return setError("La IA no devolvió un flujo.");
+      onDraft(parseFlow(JSON.parse(r.draft), accountId, materials));
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo generar el flujo");
     } finally {
