@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Paperclip, Send } from "lucide-react";
+import { Send } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
 import { setBot } from "@/lib/crm/automation";
 import { ChatThread } from "@/components/crm/ChatThread";
