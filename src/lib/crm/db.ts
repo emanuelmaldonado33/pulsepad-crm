@@ -14,7 +14,7 @@ export const toAccount = (r: AccountRow): Account => ({
   setterPrompt: r.setter_prompt, qualificationRules: r.qualification_rules, aiModel: r.ai_model, template: r.template, standardTags: r.standard_tags ?? [],
 });
 
-export const toMessage = (r: MessageRow): Message => ({ id: r.id, from: r.sender as Message["from"], text: r.body, at: r.created_at });
+export const toMessage = (r: MessageRow): Message => ({ id: r.id, from: r.sender as Message["from"], text: r.body, at: r.created_at, waStatus: r.wa_status });
 
 export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
   id: r.id, accountId: r.account_id, name: r.name, phone: r.phone, source: r.source, stage: r.stage,

@@ -5,6 +5,7 @@ export interface Message {
   from: Sender;
   text: string;
   at: string; // ISO
+  waStatus?: string | null;
 }
 
 export interface Account {

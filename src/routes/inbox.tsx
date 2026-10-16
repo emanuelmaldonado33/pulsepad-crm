@@ -1,5 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useServerFn } from "@tanstack/react-start";
+import { toast } from "sonner";
+import { sendAdvisorMessage } from "@/lib/crm/whatsapp.functions";
 import { Send } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
 import { setBot } from "@/lib/crm/automation";
@@ -24,17 +27,26 @@ export const Route = createFileRoute("/inbox")({
 });
 
 function Inbox() {
-  const { leads, updateLead, addMessage, materials } = useCrm();
+  const { leads, updateLead, materials, reload } = useCrm();
   const { lead: leadParam } = Route.useSearch();
   const navigate = useNavigate();
   const [text, setText] = useState("");
   const sorted = [...leads].sort((a, b) => (b.messages.at(-1)?.at ?? "").localeCompare(a.messages.at(-1)?.at ?? ""));
   const lead = leads.find((l) => l.id === leadParam) ?? sorted[0];
 
-  const send = () => {
-    if (!text.trim() || !lead) return;
-    void addMessage(lead.id, "asesor", text.trim());
+  const sendFn = useServerFn(sendAdvisorMessage);
+  const send = async () => {
+    const body = text.trim();
+    if (!body || !lead) return;
     setText("");
+    try {
+      const r = await sendFn({ data: { leadId: lead.id, text: body } });
+      if (r.status === "fallido") toast.error("Guardado, pero WhatsApp rechazó el envío");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo enviar");
+      setText(body);
+    }
+    await reload();
   };
 
   return (
@@ -79,7 +91,7 @@ function Inbox() {
             className="flex gap-2 border-t bg-card p-3"
             onSubmit={(e) => {
               e.preventDefault();
-              send();
+              void send();
             }}
           >
             {materials.length > 0 && (
