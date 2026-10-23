@@ -52,7 +52,7 @@ function AiConfig() {
   const { account, updateAccount } = useCrm();
   const [draft, setDraft] = useState<Account>(account);
   const [usage, setUsage] = useState<UsageRow[]>([]);
-  useEffect(() => setDraft(account), [account]);
+  useEffect(() => { setDraft(account); }, [account]);
   useEffect(() => {
     if (!account.id) return;
     supabase.from("ai_usage").select("model,input_tokens,output_tokens,total_tokens,created_at").eq("account_id", account.id).order("created_at", { ascending: false }).limit(500)
