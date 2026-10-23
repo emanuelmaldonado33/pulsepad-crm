@@ -8,7 +8,7 @@ const GAP = 10 * 60_000;
 /** Hilo estilo Apple Messages: grupos por remitente, cola sólo en la última burbuja, horas discretas. */
 export function ChatThread({ messages, typing }: { messages: Message[]; typing?: boolean }) {
   const end = useRef<HTMLDivElement>(null);
-  useEffect(() => end.current?.scrollIntoView({ behavior: "smooth" }), [messages.length, typing]);
+  useEffect(() => { end.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length, typing]);
 
   return (
     <div className="flex-1 overflow-y-auto bg-chat px-4 py-5 sm:px-8">

@@ -18,7 +18,7 @@ function apply(t: Theme) {
 /** Control segmentado Claro / Oscuro / Sistema con indicador deslizante. */
 export function ThemeToggle({ className }: { className?: string }) {
   const [theme, setTheme] = useState<Theme>("system");
-  useEffect(() => setTheme((localStorage.getItem(KEY) as Theme) || "system"), []);
+  useEffect(() => { setTheme((localStorage.getItem(KEY) as Theme) || "system"); }, []);
   useEffect(() => {
     apply(theme);
     if (theme !== "system") return;
