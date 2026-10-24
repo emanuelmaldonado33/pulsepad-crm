@@ -1,14 +1,26 @@
-# Welcome to your Lovable project
+# Pulsepad Crm
+
+Crea un CRM inmobiliario y de productos high-ticket con arquitectura multi-cuenta (subcuentas y marca blanca), que incluya:
+
+1. Selector de subcuentas en el encabezado con soporte para branding personalizado (logo, nombre y colores de marca por subcuenta).
+2. Pipeline Kanban interactivo con etapas de calificación (P0 Nuevo Lead, P1 Contactado, P2 En Calificación, P3 Material/Video Enviado, P4 Perfilado con Monto/Plazo, P5 Cita Agendada, P6 Sesión/Seguimiento, P7 Ganado / No Califica), con filtros rápidos y vista de valor total.
+3. Bandeja de entrada híbrida (Inbox estilo WhatsApp) con alternador para pausar o reactivar el bot de IA de forma manual, transcripción de mensajes y ficha lateral con el expediente del lead (presupuesto, enganche, plazos, etiquetas y notas del asesor).
+4. Simulador interactivo / Playground para probar la conversación de WhatsApp en tiempo real, observando cómo la IA extrae datos y dispara cambios de etiquetas y de etapa.
+5. Automatización bidireccional de etiquetas: las etiquetas asignadas mueven al lead en el pipeline y activan o desactivan al bot automáticamente.
+6. Módulo de Citas y Agenda con resumen previo de la llamada para el asesor (datos clave del lead antes de hablar con él).
+7. Precargado con datos de demostración para dos subcuentas: "Espacio FX" y "Preventa de Terrenos".
 
 This project was built with [Lovable](https://lovable.dev).
 
+**Live app**: https://pulsepad-crm.lovable.app
+
 ## Build with Lovable
 
-Open your project in the [Lovable editor](https://lovable.dev) and keep building.
+Continue developing this project in the [Lovable editor](https://lovable.dev/projects/05b83479-0513-4d83-bc68-76dc2ec1d116).
 
 - **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: connect the project to GitHub and every change made in Lovable is committed straight to your repository.
-- **Full ownership**: this code is yours. Push to your repository and your changes sync back into Lovable, ready for your next prompt.
+- **Stay in sync**: every change made in Lovable is committed straight to this repository.
+- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
 
 ## Development
 
@@ -20,10 +32,3 @@ cd <repository-name>
 npm i
 npm run dev
 ```
-
-## Built with
-
-- TanStack Start
-- TypeScript
-- React
-- Tailwind CSS
