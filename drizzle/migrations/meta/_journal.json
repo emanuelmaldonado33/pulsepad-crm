@@ -64,6 +64,13 @@
       "when": 1793145600000,
       "tag": "0008_tenant_whatsapp_hardening",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793232000000,
+      "tag": "0009_review_followups",
+      "breakpoints": true
     }
   ]
 }

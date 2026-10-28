@@ -42,6 +42,10 @@ const MODELS = [
   ["openai/gpt-6-astra", "Máxima calidad"],
   ["openai/gpt-6-sol", "Equilibrado"],
   ["openai/gpt-6-luna", "Rápido y económico"],
+  // Claude usa tu propia API key de Anthropic (secreto ANTHROPIC_API_KEY).
+  ["anthropic/claude-opus-5-5", "Claude Opus 5.5 · máxima calidad"],
+  ["anthropic/claude-sonnet-5-5", "Claude Sonnet 5.5 · equilibrado"],
+  ["anthropic/claude-haiku-5-5", "Claude Haiku 5.5 · rápido y económico"],
 ] as const;
 
 interface UsageRow {

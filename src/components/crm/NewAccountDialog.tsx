@@ -37,7 +37,7 @@ export function NewAccountDialog({
   open: boolean;
   onOpenChange: (v: boolean) => void;
 }) {
-  const { accounts, createAccount } = useCrm();
+  const { createAccount } = useCrm();
   const [name, setName] = useState("");
   const [initials, setInitials] = useState("");
   const [brand, setBrand] = useState(COLORS[2]!);
@@ -49,9 +49,9 @@ export function NewAccountDialog({
   const submit = async () => {
     const v = schema.safeParse({ name, initials: ini, product });
     if (!v.success) return void toast.error(v.error.issues[0]!.message);
-    let id = slugify(v.data.name);
-    while (accounts.some((a) => a.id === id))
-      id = `${id}-${Math.random().toString(36).slice(2, 5)}`;
+    // Sufijo aleatorio siempre: el navegador sólo ve sus cuentas, así que no puede saber
+    // si otra empresa ya usa el mismo nombre.
+    const id = `${slugify(v.data.name) || "cuenta"}-${crypto.randomUUID().replace(/-/g, "").slice(0, 8)}`;
     const t = TEMPLATES[tpl];
     setBusy(true);
     const ok = await createAccount({

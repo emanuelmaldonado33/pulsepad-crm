@@ -41,8 +41,9 @@ const history = Array.from({ length: 80 }, (_, i) => ({
   wa_status: null,
 }));
 
-function db(applied: unknown) {
+function db(applied: unknown, materials: unknown[] = []) {
   return fakeSupabase((q: FakeQuery): FakeResult | undefined => {
+    if (q.table === "materials") return { data: materials };
     if (q.table === "leads" && q.op === "select") return { data: leadRow };
     if (q.table === "accounts") return { data: accountRow };
     if (q.table === "messages" && q.op === "select") {
@@ -107,5 +108,22 @@ describe("qualifyLead", () => {
     const r = await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
     expect(r.reply).toBe("Hola Ana");
     expect(dispatchMessage).toHaveBeenCalledTimes(1);
+  });
+
+  it("sólo comparte enlaces de la biblioteca de la cuenta, nunca demo.video", async () => {
+    const url = "https://cdn.example.com/brochure.pdf";
+    const { client } = db({ id: "m78" }, [{ name: "Brochure", kind: "pdf", url }]);
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    const system = runQualifier.mock.calls[0]![0].system as string;
+    expect(system).toContain(url);
+    expect(system).not.toContain("demo.video");
+  });
+
+  it("sin material cargado, pide no compartir enlaces", async () => {
+    const { client } = db({ id: "m78" });
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    const system = runQualifier.mock.calls[0]![0].system as string;
+    expect(system).toContain("no compartas enlaces");
+    expect(system).not.toContain("demo.video");
   });
 });

@@ -52,13 +52,24 @@ export async function qualifyLead(
     };
   }
 
+  // Sólo se comparten enlaces de la biblioteca de la cuenta; nunca uno inventado.
+  const { data: library } = await sb
+    .from("materials")
+    .select("name, kind, url")
+    .eq("account_id", acc.id)
+    .order("created_at")
+    .limit(10);
+  const materialRule = library?.length
+    ? `Cuando ya conozcas el presupuesto y aún no se haya enviado, comparte el material más adecuado. Usa sólo estos enlaces, tal cual, y nunca inventes otros:\n${library.map((m) => `- ${m.name} (${m.kind}): ${m.url}`).join("\n")}`
+    : "Esta subcuenta aún no tiene material cargado: no compartas enlaces; ofrece que un asesor envíe la información.";
+
   const system = `${acc.setter_prompt}
 
 REGLAS DE CALIFICACIÓN DE ESTA SUBCUENTA:
 ${acc.qualification_rules}
 
 ETAPAS DEL PIPELINE: P0 Nuevo, P1 Contactado, P2 En calificación, P3 Material/Video enviado, P4 Perfilado (monto/plazo), P5 Cita agendada, P6 Seguimiento, P7 Ganado/No califica.
-Cuando ya conozcas el presupuesto y aún no se haya enviado, comparte el material con este enlace: https://demo.video/${acc.id}
+${materialRule}
 Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y confirma la cita para mañana a las 11:00.
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
@@ -82,6 +93,7 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       throw new Error("Sin créditos de IA disponibles. Agrega créditos para seguir usando el bot.");
     if (status === 429)
       throw new Error("Demasiadas solicitudes a la IA. Intenta de nuevo en unos segundos.");
+    if (status === 401) throw new Error((e as Error).message);
     console.error(e);
     throw new Error("La IA no pudo responder este mensaje.");
   }
