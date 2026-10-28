@@ -99,38 +99,12 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
 
         const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
-        const { qualifyLead } = await import("@/lib/crm/qualify.server");
+        const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
+        const toProcess: string[] = [];
 
-        const processStoredMessage = async (message: { id: string; lead_id: string; body: string }) => {
-          const { data: lead, error: leadError } = await sb.from("leads").select("bot_active").eq("id", message.lead_id).single();
-          if (leadError || !lead) throw new Error("No se pudo cargar el lead para procesar el mensaje");
-          const now = new Date();
-          const reclaimBefore = new Date(now.getTime() - 10 * 60_000).toISOString();
-          const { data: claimed, error: claimError } = await sb.from("messages")
-            .update({ ai_status: "processing", ai_processing_at: now.toISOString(), ai_last_error: null })
-            .eq("id", message.id)
-            .or(`ai_status.in.(pending,error),and(ai_status.eq.processing,ai_processing_at.lt.${reclaimBefore})`)
-            .select("id")
-            .maybeSingle();
-          if (claimError) throw new Error("No se pudo reservar el mensaje para IA");
-          if (!claimed) return;
-          if (!lead.bot_active) {
-            const { error } = await sb.from("messages").update({ ai_status: "processed", ai_processing_at: null }).eq("id", message.id).eq("ai_status", "processing");
-            if (error) throw new Error("No se pudo finalizar el mensaje");
-            return;
-          }
-          try {
-            await qualifyLead(sb, message.lead_id, message.body, { skipInsert: true });
-            const { error } = await sb.from("messages").update({ ai_status: "processed", ai_processing_at: null, ai_last_error: null }).eq("id", message.id).eq("ai_status", "processing");
-            if (error) throw error;
-          } catch (e) {
-            const detail = e instanceof Error ? e.message : "Error desconocido al procesar con IA";
-            await sb.from("messages").update({ ai_status: "error", ai_processing_at: null, ai_last_error: detail.slice(0, 500) }).eq("id", message.id).eq("ai_status", "processing");
-            throw e;
-          }
-        };
-
+        // 1) Guardar cada mensaje una sola vez. Sólo un fallo al guardar responde 500 para
+        //    que Meta reintente; la IA nunca bloquea la respuesta a Meta.
         for (const entry of payload.entry) for (const change of entry.changes) {
           const v = change.value;
           const pnid = v.metadata?.phone_number_id;
@@ -144,64 +118,58 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
           if (!(await validSignature(raw, sigHeader, ch.app_secret))) return new Response("Invalid signature", { status: 401 });
 
           for (const m of v.messages) {
-            const { data: duplicate, error: duplicateError } = await sb.from("messages")
-              .select("id, lead_id, body")
-              .eq("wa_message_id", m.id)
-              .maybeSingle();
-            if (duplicateError) return new Response("Temporary failure", { status: 500 });
-            if (duplicate) {
-              try { await processStoredMessage(duplicate); }
-              catch (e) {
-                console.error("webhook AI retry failed", e instanceof Error ? e.message : "unknown error");
-                return new Response("Temporary failure", { status: 500 });
-              }
+            const { data: existing, error: existingError } = await sb.from("messages").select("id").eq("wa_message_id", m.id).maybeSingle();
+            if (existingError) return new Response("Temporary failure", { status: 500 });
+            if (existing) {
+              toProcess.push(existing.id);
               continue;
             }
 
             const name = v.contacts?.find((c) => c.wa_id === m.from)?.profile?.name?.slice(0, 120) || `WhatsApp +${m.from}`;
             const { data: cands, error: candidatesError } = await sb.from("leads")
-              .select("id, account_id, phone, bot_active")
+              .select("id, phone")
               .eq("account_id", ch.account_id)
               .ilike("phone", `%${m.from.slice(-4)}%`)
               .limit(200);
             if (candidatesError) return new Response("Temporary failure", { status: 500 });
-            let lead = (cands ?? []).find((l) => samePhone(l.phone, m.from));
-            if (!lead) {
+            let leadId = (cands ?? []).find((l) => samePhone(l.phone, m.from))?.id;
+            if (!leadId) {
               const { data: created, error: createError } = await sb.from("leads")
                 .insert({ account_id: ch.account_id, name, phone: `+${m.from}`, source: "WhatsApp" })
-                .select("id, account_id, phone, bot_active")
+                .select("id")
                 .single();
               if (createError || !created) {
                 console.error("webhook lead insert failed", createError?.message);
                 return new Response("Temporary failure", { status: 500 });
               }
-              lead = created;
+              leadId = created.id;
             }
             const body = textOf(m).slice(0, 2000);
             const { data: inserted, error: insertError } = await sb.from("messages")
-              .insert({ lead_id: lead.id, sender: "lead", body, wa_message_id: m.id, wa_status: "recibido", ai_status: "pending" })
-              .select("id, lead_id, body")
-              .maybeSingle();
-            if (insertError) {
-              if (insertError.code === "23505") {
-                const { data: raced, error: racedError } = await sb.from("messages").select("id, lead_id, body").eq("wa_message_id", m.id).maybeSingle();
-                if (racedError || !raced) return new Response("Temporary failure", { status: 500 });
-                try { await processStoredMessage(raced); }
-                catch (e) {
-                  console.error("webhook AI retry failed", e instanceof Error ? e.message : "unknown error");
-                  return new Response("Temporary failure", { status: 500 });
-                }
-                continue;
-              }
-              console.error("webhook message insert failed", insertError.message);
+              .insert({ lead_id: leadId, sender: "lead", body, wa_message_id: m.id, wa_status: "recibido", ai_status: "pending" })
+              .select("id")
+              .single();
+            if (insertError?.code === "23505") {
+              // Otro reintento de Meta lo guardó al mismo tiempo; ese mismo id se procesa abajo.
+              const { data: raced } = await sb.from("messages").select("id").eq("wa_message_id", m.id).maybeSingle();
+              if (raced) toProcess.push(raced.id);
+              continue;
+            }
+            if (insertError || !inserted) {
+              console.error("webhook message insert failed", insertError?.message);
               return new Response("Temporary failure", { status: 500 });
             }
-            if (!inserted) return new Response("Temporary failure", { status: 500 });
-            try { await processStoredMessage(inserted); }
-            catch (e) {
-              console.error("webhook AI failed", e instanceof Error ? e.message : "unknown error");
-              return new Response("Temporary failure", { status: 500 });
-            }
+            toProcess.push(inserted.id);
+          }
+        }
+
+        // 2) Responder con IA. Un error queda en la fila (ai_status = error) y el barrido de
+        //    /api/public/flows-tick lo reintenta con límite; Meta recibe 200 de todos modos.
+        for (const id of toProcess) {
+          try {
+            await processInboundMessage(sb, id);
+          } catch (e) {
+            console.error("webhook AI processing failed", e instanceof Error ? e.message : "unknown error");
           }
         }
         return new Response("OK");

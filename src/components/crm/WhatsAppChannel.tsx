@@ -39,8 +39,12 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
     setBusy(true);
     try {
       const r = await save({ data: { accountId, ...form } });
-      if (r.ok) toast.success(form.enabled ? `WhatsApp guardado${r.info ? ` · ${r.info}` : ""}` : "Guardado en modo simulación");
-      else toast.error(`Meta rechazó la conexión: ${r.error}`);
+      if (!r.ok) {
+        // No se guardó nada: conserva lo que escribió para que lo corrija.
+        toast.error(`No se guardó: ${r.error}`);
+        return;
+      }
+      toast.success(form.enabled ? `WhatsApp guardado${r.info ? ` · ${r.info}` : ""}` : "Guardado en modo simulación");
       await load();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "No se pudo guardar");

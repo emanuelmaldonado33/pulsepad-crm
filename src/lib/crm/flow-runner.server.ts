@@ -76,9 +76,18 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
 
 /** Procesa un lote acotado de pasos vencidos. */
 export async function processDue(sb: Sb, limit = 50) {
-  const { data } = await sb.from("flow_enrollments").select("id").eq("status", "active")
+  const { data } = await sb.from("flow_enrollments").select("id, account_id").eq("status", "active")
     .lte("next_run_at", new Date().toISOString()).order("next_run_at").limit(limit);
+  // Una cuenta sin propietario no envía seguimientos: nadie podría ver esas conversaciones.
+  const accountIds = [...new Set((data ?? []).map((r) => r.account_id))];
+  const { data: owners } = accountIds.length
+    ? await sb.from("account_memberships").select("account_id").eq("role", "owner").in("account_id", accountIds)
+    : { data: [] as { account_id: string }[] };
+  const owned = new Set((owners ?? []).map((o) => o.account_id));
   let ran = 0;
-  for (const r of data ?? []) if ((await runEnrollment(sb, r.id)) === "ran") ran++;
+  for (const r of data ?? []) {
+    if (!owned.has(r.account_id)) continue;
+    if ((await runEnrollment(sb, r.id)) === "ran") ran++;
+  }
   return { due: data?.length ?? 0, ran };
 }

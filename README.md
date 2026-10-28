@@ -39,22 +39,59 @@ La migración `0008_tenant_whatsapp_hardening.sql` limita cada cuenta, sus leads
 mensajes, citas, flujos, materiales, uso de IA y archivos de Storage a sus miembros.
 Las cuentas nuevas asignan como propietario al usuario autenticado que las crea.
 
-Las cuentas que ya existían antes de la migración (incluidas las cuentas de
-demostración) quedan sin propietario de forma intencional: no se asignan al primer
-usuario que se registre. Después de aplicar la migración, un administrador debe
-consultar el UUID del usuario autorizado en `auth.users` y registrar su membresía
-propietaria. En el SQL Editor de Supabase, con el UUID real, ejecutar por cada
-cuenta que deba conservarse:
+### Propietario de las cuentas existentes
+
+El negocio confirmó un único propietario para todas las cuentas que ya existían:
+`c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878`. La migración lo registra como `owner` de
+cada cuenta en el mismo paso en que activa las políticas, así que nadie pierde el
+acceso. Antes de cambiar nada, la migración comprueba que ese usuario exista en
+`auth.users` y que ningún `phone_number_id` esté repetido; si algo falla, se detiene
+sin aplicar cambios.
+
+Para confirmar el UUID antes de desplegar (solo lectura):
+
+```sql
+SELECT id, email FROM auth.users WHERE lower(email) = lower('tu-correo@empresa.com');
+```
+
+Después de desplegar, esta consulta debe devolver cero filas:
+
+```sql
+SELECT a.id FROM public.accounts a
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.account_memberships m
+  WHERE m.account_id = a.id AND m.role = 'owner'
+);
+```
+
+Una cuenta sin propietario no responde con el bot: los mensajes entrantes se guardan
+con `ai_status = 'held'` para que un asesor los vea y los flujos de seguimiento no
+envían nada. Para dar acceso a un asesor como miembro:
 
 ```sql
 INSERT INTO public.account_memberships (account_id, user_id, role)
-VALUES ('espacio-fx', 'UUID-REAL-DEL-USUARIO', 'owner')
+VALUES ('espacio-fx', 'UUID-DEL-ASESOR', 'member')
 ON CONFLICT (account_id, user_id) DO NOTHING;
 ```
 
-Repetir para `preventa-terrenos` u otras cuentas existentes. No habilitar el
-acceso de una cuenta compartida a todos los usuarios autenticados.
+## WhatsApp entrante
 
-Los propietarios pueden agregar usuarios como miembros desde el SQL Editor
-mientras el producto no incluya una pantalla de invitaciones. La tabla
-`account_memberships` exige que el usuario invitado exista en `auth.users`.
+El webhook guarda cada mensaje una sola vez (`wa_message_id` único) y responde 200 a
+Meta en cuanto queda guardado; solo responde 500 si no pudo guardarlo. La IA se
+ejecuta después: `claim_inbound_message` reserva un mensaje por lead a la vez, cuenta
+los intentos (máximo 5) y no responde mensajes de más de 24 horas. Si la IA falla, el
+mensaje queda en `error` y el cron `/api/public/flows-tick` lo reintenta. Una
+respuesta se aplica una sola vez (`ai_applied_at`), aunque Meta reintente.
+
+Un `phone_number_id` solo puede pertenecer a una cuenta y solo se guarda cuando Meta
+lo confirma con el Access Token de esa cuenta.
+
+## Pruebas
+
+```sh
+npm test          # pruebas unitarias (incluye webhook, cola de IA y credenciales)
+npm run test:db   # RLS y permisos sobre un Postgres local desechable
+```
+
+`npm run test:db` usa las variables `PGHOST`, `PGPORT` y `PGUSER` de un Postgres
+local donde se puedan crear bases y roles. Nunca lo apuntes a Lovable Cloud.

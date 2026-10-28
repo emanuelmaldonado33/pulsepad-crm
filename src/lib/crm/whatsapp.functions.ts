@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { checkCredentials, dispatchMessage } from "./whatsapp.server";
+import { checkCredentials, dispatchMessage, planChannelSave } from "./whatsapp.server";
 
 export type WhatsAppStatus = {
   mode: "conectado" | "desconectado" | "simulacion";
@@ -84,18 +84,9 @@ export const saveWhatsApp = createServerFn({ method: "POST" })
       .eq("account_id", data.accountId)
       .maybeSingle();
     if (readError) throw new Error("No se pudo leer la configuración actual");
-    const token = data.clearAccessToken ? "" : data.accessToken || cur?.access_token || "";
-    const appSecret = data.clearAppSecret ? "" : data.appSecret || cur?.app_secret || "";
-    let last_error: string | null = null;
-    let info = "";
-    if (data.enabled) {
-      if (!data.phoneNumberId || !token) last_error = "Faltan Phone Number ID o Access Token";
-      else {
-        const r = await checkCredentials(data.phoneNumberId, token);
-        if (r.ok) info = `${r.name} ${r.phone}`.trim();
-        else last_error = r.error;
-      }
-    }
+    const plan = await planChannelSave(data, cur, checkCredentials);
+    if (!plan.ok) return { ok: false, error: plan.error, info: "" };
+    const { token, appSecret, info } = plan;
     const { error } = await supabaseAdmin.from("whatsapp_channels").upsert({
       account_id: data.accountId,
       phone_number_id: data.phoneNumberId,
@@ -104,12 +95,15 @@ export const saveWhatsApp = createServerFn({ method: "POST" })
       app_secret: appSecret,
       verify_token: data.verifyToken,
       enabled: data.enabled,
-      last_error,
+      last_error: null,
       last_checked_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
+    if (error?.code === "23505") {
+      return { ok: false, error: "Ese Phone Number ID ya está conectado a otra cuenta", info: "" };
+    }
     if (error) throw new Error("No se pudo guardar la configuración");
-    return { ok: !last_error, error: last_error, info };
+    return { ok: true, error: null as string | null, info };
   });
 
 /** Envío manual del asesor desde la Bandeja: guarda y despacha por WhatsApp si hay canal. */

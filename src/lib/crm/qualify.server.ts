@@ -8,23 +8,36 @@ import { dispatchMessage } from "./whatsapp.server";
 const money = (n: number) => "$" + n.toLocaleString("es-MX");
 
 /** Motor calificador compartido por el simulador y el webhook de WhatsApp. */
-export async function qualifyLead(sb: SupabaseClient<Database>, leadId: string, text: string, opts: { skipInsert?: boolean } = {}) {
+export async function qualifyLead(
+  sb: SupabaseClient<Database>,
+  leadId: string,
+  text: string,
+  opts: { skipInsert?: boolean; inboundMessageId?: string } = {},
+) {
     const { data: row, error: le } = await sb.from("leads").select("*").eq("id", leadId).single();
     if (le || !row) throw new Error("Lead no encontrado");
     const { data: acc, error: ae } = await sb.from("accounts").select("*").eq("id", row.account_id).single();
     if (ae || !acc) throw new Error("Subcuenta no encontrada");
 
-    if (!opts.skipInsert) {
+    if (!opts.skipInsert && !opts.inboundMessageId) {
       const { error: ie } = await sb.from("messages").insert({ lead_id: row.id, sender: "lead", body: text });
       if (ie) throw new Error("No se pudo guardar el mensaje");
     }
-    const { data: msgs } = await sb.from("messages").select("*").eq("lead_id", row.id).order("created_at").limit(60);
-    let lead: Lead = toLead(row, (msgs ?? []).map(toMessage));
+    // Los 60 mensajes más recientes, en orden cronológico para la IA.
+    const { data: recent } = await sb
+      .from("messages")
+      .select("*")
+      .eq("lead_id", row.id)
+      .order("created_at", { ascending: false })
+      .limit(60);
+    const msgs = (recent ?? []).reverse();
+    const contextUntil = msgs.at(-1)?.created_at ?? null;
+    let lead: Lead = toLead(row, msgs.map(toMessage));
     const events: BotEvent[] = [];
 
     if (!lead.botActive) {
       events.push({ kind: "bot", text: "Bot en pausa: el mensaje queda para el asesor" });
-      return { reply: null as string | null, events, summary: null as string | null, tokens: 0 };
+      return { reply: null as string | null, events, summary: null as string | null, tokens: 0, contextUntil };
     }
 
     const system = `${acc.setter_prompt}
@@ -56,6 +69,24 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       throw new Error("La IA no pudo responder este mensaje.");
     }
     const o = ai.output;
+
+    // Un mensaje entrante aplica su respuesta una sola vez: si un reintento ya la aplicó,
+    // no se vuelve a tocar el lead, la agenda ni se envía otro WhatsApp.
+    if (opts.inboundMessageId) {
+      const { data: applied, error: applyError } = await sb
+        .from("messages")
+        .update({ ai_applied_at: new Date().toISOString() })
+        .eq("id", opts.inboundMessageId)
+        .eq("ai_status", "processing")
+        .is("ai_applied_at", null)
+        .select("id")
+        .maybeSingle();
+      if (applyError) throw new Error("No se pudo reservar la respuesta del mensaje");
+      if (!applied) {
+        events.push({ kind: "bot", text: "Respuesta ya aplicada por otro intento" });
+        return { reply: null as string | null, events, summary: null as string | null, tokens: ai.usage.total, contextUntil };
+      }
+    }
 
     // Datos extraídos
     if (o.budget != null && o.budget !== lead.budget) { lead.budget = o.budget; events.push({ kind: "dato", text: `Presupuesto: ${money(o.budget)}` }); }
@@ -118,5 +149,5 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
     });
     if (usageError) console.error("AI usage log failed", usageError.message);
     events.push({ kind: "dato", text: `Tokens usados: ${ai.usage.total.toLocaleString("es-MX")}` });
-    return { reply, events, summary: o.summary, tokens: ai.usage.total };
+    return { reply, events, summary: o.summary, tokens: ai.usage.total, contextUntil };
 }

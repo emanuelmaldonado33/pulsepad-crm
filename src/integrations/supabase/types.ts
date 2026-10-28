@@ -400,6 +400,8 @@ export type Database = {
       }
       messages: {
         Row: {
+          ai_applied_at: string | null
+          ai_attempts: number
           ai_last_error: string | null
           ai_processing_at: string | null
           ai_status: string
@@ -412,6 +414,8 @@ export type Database = {
           wa_status: string | null
         }
         Insert: {
+          ai_applied_at?: string | null
+          ai_attempts?: number
           ai_last_error?: string | null
           ai_processing_at?: string | null
           ai_status?: string
@@ -424,6 +428,8 @@ export type Database = {
           wa_status?: string | null
         }
         Update: {
+          ai_applied_at?: string | null
+          ai_attempts?: number
           ai_last_error?: string | null
           ai_processing_at?: string | null
           ai_status?: string
@@ -497,7 +503,15 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      claim_inbound_message: {
+        Args: {
+          p_expire_after?: unknown
+          p_max_attempts?: number
+          p_message_id: string
+          p_stale_after?: unknown
+        }
+        Returns: string
+      }
     }
     Enums: {
       [_ in never]: never

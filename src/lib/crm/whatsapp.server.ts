@@ -71,3 +71,39 @@ export async function checkCredentials(phoneNumberId: string, token: string) {
   if (!res.ok) return { ok: false as const, error: body.error?.message ?? `Meta respondió ${res.status}` };
   return { ok: true as const, phone: body.display_phone_number ?? "", name: body.verified_name ?? "" };
 }
+
+type ChannelInput = {
+  phoneNumberId: string;
+  accessToken?: string | undefined;
+  appSecret?: string | undefined;
+  clearAccessToken: boolean;
+  clearAppSecret: boolean;
+  enabled: boolean;
+};
+
+/**
+ * Decide qué credenciales guardar. Sólo se guarda un Phone Number ID que Meta confirma con
+ * el token de esta cuenta: así nadie puede reservar el número de otra cuenta y desviar o
+ * tumbar su webhook. Si algo falla no se guarda nada.
+ */
+export async function planChannelSave(
+  input: ChannelInput,
+  cur: { phone_number_id: string; access_token: string; app_secret: string } | null,
+  check: typeof checkCredentials,
+): Promise<{ ok: true; token: string; appSecret: string; info: string } | { ok: false; error: string }> {
+  const token = input.clearAccessToken ? "" : input.accessToken || cur?.access_token || "";
+  const appSecret = input.clearAppSecret ? "" : input.appSecret || cur?.app_secret || "";
+  if (input.enabled && (!input.phoneNumberId || !token)) {
+    return { ok: false, error: "Faltan Phone Number ID o Access Token" };
+  }
+  const phoneChanged = input.phoneNumberId !== (cur?.phone_number_id ?? "");
+  const tokenChanged = token !== (cur?.access_token ?? "");
+  let info = "";
+  if (input.phoneNumberId && (input.enabled || phoneChanged || (tokenChanged && token))) {
+    if (!token) return { ok: false, error: "Para guardar el Phone Number ID necesitas un Access Token" };
+    const r = await check(input.phoneNumberId, token);
+    if (!r.ok) return { ok: false, error: r.error };
+    info = `${r.name} ${r.phone}`.trim();
+  }
+  return { ok: true, token, appSecret, info };
+}
