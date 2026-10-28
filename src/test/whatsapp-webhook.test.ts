@@ -17,7 +17,12 @@ const POST = (Route.options as unknown as { server: { handlers: { POST: Handler 
   .handlers.POST;
 
 const SECRET = "app-secret";
-const channel = { account_id: "acc", phone_number_id: "1000001", app_secret: SECRET, enabled: true };
+const channel = {
+  account_id: "acc",
+  phone_number_id: "1000001",
+  app_secret: SECRET,
+  enabled: true,
+};
 const payload = (id = "wamid.1") =>
   JSON.stringify({
     entry: [

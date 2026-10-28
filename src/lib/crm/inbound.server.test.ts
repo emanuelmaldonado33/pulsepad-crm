@@ -4,9 +4,8 @@ import { fakeSupabase, type FakeQuery } from "@/test/fake-supabase";
 const qualifyLead = vi.fn();
 vi.mock("./qualify.server", () => ({ qualifyLead: (...a: unknown[]) => qualifyLead(...a) }));
 
-const { processInboundMessage, sweepInboundMessages, MAX_AI_ATTEMPTS } = await import(
-  "./inbound.server"
-);
+const { processInboundMessage, sweepInboundMessages, MAX_AI_ATTEMPTS } =
+  await import("./inbound.server");
 
 const msg = { id: "m1", lead_id: "L1", body: "hola" };
 const updates = (calls: FakeQuery[]) => calls.filter((c) => c.op === "update");

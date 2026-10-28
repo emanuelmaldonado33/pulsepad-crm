@@ -49,9 +49,24 @@ export const waitMs = (amount: number, unit: WaitUnit) => Math.max(0, amount) * 
 export const unitLabel = (amount: number, unit: WaitUnit) =>
   `${amount} ${unit === "min" ? (amount === 1 ? "minuto" : "minutos") : unit === "hour" ? (amount === 1 ? "hora" : "horas") : amount === 1 ? "día" : "días"}`;
 
-export const VARIABLES = ["nombre", "nombre_completo", "proyecto", "producto", "presupuesto", "cita"] as const;
+export const VARIABLES = [
+  "nombre",
+  "nombre_completo",
+  "proyecto",
+  "producto",
+  "presupuesto",
+  "cita",
+] as const;
 
-export function renderText(text: string, ctx: { lead: Lead; account: Account; appointment?: Appointment | undefined; material?: Material | undefined }) {
+export function renderText(
+  text: string,
+  ctx: {
+    lead: Lead;
+    account: Account;
+    appointment?: Appointment | undefined;
+    material?: Material | undefined;
+  },
+) {
   const { lead, account, appointment } = ctx;
   const vars: Record<string, string> = {
     nombre: lead.name.split(" ")[0] ?? lead.name,
@@ -59,26 +74,50 @@ export function renderText(text: string, ctx: { lead: Lead; account: Account; ap
     proyecto: account.name,
     producto: account.product,
     presupuesto: lead.budget == null ? "tu presupuesto" : "$" + lead.budget.toLocaleString("es-MX"),
-    cita: appointment ? new Date(appointment.at).toLocaleString("es-MX", { weekday: "long", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" }) : "tu cita",
+    cita: appointment
+      ? new Date(appointment.at).toLocaleString("es-MX", {
+          weekday: "long",
+          day: "numeric",
+          month: "long",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "tu cita",
   };
   let out = text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => vars[k] ?? m);
-  if (ctx.material) out += `\n\n${materialIcon(ctx.material.kind)} ${ctx.material.name}: ${ctx.material.url}`;
+  if (ctx.material)
+    out += `\n\n${materialIcon(ctx.material.kind)} ${ctx.material.name}: ${ctx.material.url}`;
   return out;
 }
 
 /** ¿Qué flujos activos dispara el cambio de lead? prev = undefined significa lead nuevo. */
-export function matchTriggers(flows: Flow[], prev: Pick<Lead, "stage" | "tags"> | undefined, next: Lead): Flow[] {
+export function matchTriggers(
+  flows: Flow[],
+  prev: Pick<Lead, "stage" | "tags"> | undefined,
+  next: Lead,
+): Flow[] {
   return flows.filter((f) => {
     if (!f.active || f.accountId !== next.accountId) return false;
     if (f.triggerType === "new_lead") return prev === undefined;
-    if (f.triggerType === "stage") return Number(f.triggerValue) === next.stage && (prev === undefined || prev.stage !== next.stage);
-    if (f.triggerType === "tag") return next.tags.includes(f.triggerValue) && !(prev?.tags.includes(f.triggerValue) ?? false);
+    if (f.triggerType === "stage")
+      return (
+        Number(f.triggerValue) === next.stage && (prev === undefined || prev.stage !== next.stage)
+      );
+    if (f.triggerType === "tag")
+      return next.tags.includes(f.triggerValue) && !(prev?.tags.includes(f.triggerValue) ?? false);
     return false;
   });
 }
 
-export const triggerLabel = (f: Pick<Flow, "triggerType" | "triggerValue">, stageName: (n: number) => string) =>
-  f.triggerType === "new_lead" ? "Lead nuevo" : f.triggerType === "stage" ? `Entra a ${stageName(Number(f.triggerValue))}` : `Recibe etiqueta #${f.triggerValue}`;
+export const triggerLabel = (
+  f: Pick<Flow, "triggerType" | "triggerValue">,
+  stageName: (n: number) => string,
+) =>
+  f.triggerType === "new_lead"
+    ? "Lead nuevo"
+    : f.triggerType === "stage"
+      ? `Entra a ${stageName(Number(f.triggerValue))}`
+      : `Recibe etiqueta #${f.triggerValue}`;
 
 export interface FlowTemplate {
   key: string;
@@ -89,7 +128,8 @@ export interface FlowTemplate {
   steps: (materials: Material[]) => FlowStep[];
 }
 
-const firstOf = (m: Material[], kind: Material["kind"]) => m.find((x) => x.kind === kind)?.id ?? null;
+const firstOf = (m: Material[], kind: Material["kind"]) =>
+  m.find((x) => x.kind === kind)?.id ?? null;
 
 export const FLOW_TEMPLATES: FlowTemplate[] = [
   {
@@ -99,12 +139,27 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     triggerType: "new_lead",
     triggerValue: "",
     steps: (m) => [
-      { id: sid(), type: "message", text: "¡Hola {{nombre}}! 👋 Gracias por tu interés en {{proyecto}}. Te comparto un video corto para que conozcas el proyecto:", materialId: firstOf(m, "video") },
+      {
+        id: sid(),
+        type: "message",
+        text: "¡Hola {{nombre}}! 👋 Gracias por tu interés en {{proyecto}}. Te comparto un video corto para que conozcas el proyecto:",
+        materialId: firstOf(m, "video"),
+      },
       { id: sid(), type: "wait", amount: 15, unit: "min" },
-      { id: sid(), type: "message", text: "Aquí tienes también el brochure con precios y detalles:", materialId: firstOf(m, "pdf") },
+      {
+        id: sid(),
+        type: "message",
+        text: "Aquí tienes también el brochure con precios y detalles:",
+        materialId: firstOf(m, "pdf"),
+      },
       { id: sid(), type: "action", action: "add_tag", value: "video-enviado" },
       { id: sid(), type: "wait", amount: 2, unit: "hour" },
-      { id: sid(), type: "message", text: "{{nombre}}, ¿pudiste ver el video? Cuéntame qué te pareció y si tienes alguna duda 🙂", materialId: null },
+      {
+        id: sid(),
+        type: "message",
+        text: "{{nombre}}, ¿pudiste ver el video? Cuéntame qué te pareció y si tienes alguna duda 🙂",
+        materialId: null,
+      },
     ],
   },
   {
@@ -115,7 +170,12 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     triggerValue: "calificando",
     steps: () => [
       { id: sid(), type: "wait", amount: 24, unit: "hour" },
-      { id: sid(), type: "message", text: "Hola {{nombre}}, sigo por aquí 😊 ¿Te gustaría que te ayude a encontrar la mejor opción en {{proyecto}} según tu presupuesto?", materialId: null },
+      {
+        id: sid(),
+        type: "message",
+        text: "Hola {{nombre}}, sigo por aquí 😊 ¿Te gustaría que te ayude a encontrar la mejor opción en {{proyecto}} según tu presupuesto?",
+        materialId: null,
+      },
       { id: sid(), type: "action", action: "add_tag", value: "reactivacion" },
     ],
   },
@@ -127,11 +187,22 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     triggerValue: "5",
     steps: () => [
       { id: sid(), type: "wait_appt", amount: 24, unit: "hour" },
-      { id: sid(), type: "message", text: "Hola {{nombre}}, te recuerdo tu cita de {{proyecto}} el {{cita}}. Revisaremos opciones para {{presupuesto}}. ¿Me confirmas tu asistencia? ✅", materialId: null },
+      {
+        id: sid(),
+        type: "message",
+        text: "Hola {{nombre}}, te recuerdo tu cita de {{proyecto}} el {{cita}}. Revisaremos opciones para {{presupuesto}}. ¿Me confirmas tu asistencia? ✅",
+        materialId: null,
+      },
       { id: sid(), type: "wait_appt", amount: 2, unit: "hour" },
-      { id: sid(), type: "message", text: "{{nombre}}, nos vemos en 2 horas ({{cita}}). ¡Te esperamos!", materialId: null },
+      {
+        id: sid(),
+        type: "message",
+        text: "{{nombre}}, nos vemos en 2 horas ({{cita}}). ¡Te esperamos!",
+        materialId: null,
+      },
     ],
   },
 ];
 
-export const materialIcon = (k: Material["kind"]) => (k === "video" ? "🎥" : k === "image" ? "🖼️" : "📄");
+export const materialIcon = (k: Material["kind"]) =>
+  k === "video" ? "🎥" : k === "image" ? "🖼️" : "📄";

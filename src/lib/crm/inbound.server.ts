@@ -12,14 +12,7 @@ export const STALE_PROCESSING_MS = 10 * 60_000;
 export const EXPIRE_AFTER_MS = 24 * 3600_000;
 
 export type InboundOutcome =
-  | "processed"
-  | "error"
-  | "busy"
-  | "done"
-  | "held"
-  | "exhausted"
-  | "expired"
-  | "missing";
+  "processed" | "error" | "busy" | "done" | "held" | "exhausted" | "expired" | "missing";
 
 /**
  * Procesa con IA un mensaje entrante ya guardado. La reserva la hace

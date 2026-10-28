@@ -3,8 +3,15 @@ import { parseLeadsTable, parseMoney } from "./tools";
 
 describe("importador CSV", () => {
   it("lee encabezados en español y montos", () => {
-    const { rows } = parseLeadsTable("Nombre,Teléfono,Presupuesto,Etiqueta inicial\nAna Ruiz,5512345678,\"$1,200,000\",VIP");
-    expect(rows[0]).toEqual({ name: "Ana Ruiz", phone: "5512345678", budget: 1_200_000, tag: "vip" });
+    const { rows } = parseLeadsTable(
+      'Nombre,Teléfono,Presupuesto,Etiqueta inicial\nAna Ruiz,5512345678,"$1,200,000",VIP',
+    );
+    expect(rows[0]).toEqual({
+      name: "Ana Ruiz",
+      phone: "5512345678",
+      budget: 1_200_000,
+      tag: "vip",
+    });
   });
   it("acepta tabla pegada con tabuladores y sin encabezado", () => {
     const { rows } = parseLeadsTable("Luis\t555\t850 mil\twebinar");

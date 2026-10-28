@@ -4,7 +4,9 @@ import { fakeSupabase, type FakeQuery, type FakeResult } from "@/test/fake-supab
 const runQualifier = vi.fn();
 const dispatchMessage = vi.fn();
 vi.mock("./ai.server", () => ({ runQualifier: (...a: unknown[]) => runQualifier(...a) }));
-vi.mock("./whatsapp.server", () => ({ dispatchMessage: (...a: unknown[]) => dispatchMessage(...a) }));
+vi.mock("./whatsapp.server", () => ({
+  dispatchMessage: (...a: unknown[]) => dispatchMessage(...a),
+}));
 vi.mock("@/integrations/supabase/client.server", () => ({
   supabaseAdmin: fakeSupabase(() => ({})).client,
 }));
@@ -12,15 +14,31 @@ vi.mock("@/integrations/supabase/client.server", () => ({
 const { qualifyLead } = await import("./qualify.server");
 
 const leadRow = {
-  id: "L1", account_id: "acc", name: "Ana", phone: "+525512345678", source: "WhatsApp",
-  stage: 1, outcome: null, budget: null, down_payment: null, term_months: null, intent: null,
-  tags: [], notes: "", bot_active: true, created_at: "2026-10-01T00:00:00Z",
+  id: "L1",
+  account_id: "acc",
+  name: "Ana",
+  phone: "+525512345678",
+  source: "WhatsApp",
+  stage: 1,
+  outcome: null,
+  budget: null,
+  down_payment: null,
+  term_months: null,
+  intent: null,
+  tags: [],
+  notes: "",
+  bot_active: true,
+  created_at: "2026-10-01T00:00:00Z",
 };
 const accountRow = { id: "acc", setter_prompt: "", qualification_rules: "", ai_model: "m" };
 // 80 mensajes; la base los devuelve del más reciente al más antiguo (orden descendente).
 const history = Array.from({ length: 80 }, (_, i) => ({
-  id: `m${i}`, lead_id: "L1", sender: i % 2 ? "bot" : "lead", body: `mensaje ${i}`,
-  created_at: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(), wa_status: null,
+  id: `m${i}`,
+  lead_id: "L1",
+  sender: i % 2 ? "bot" : "lead",
+  body: `mensaje ${i}`,
+  created_at: new Date(Date.UTC(2026, 9, 1, 0, i)).toISOString(),
+  wa_status: null,
 }));
 
 function db(applied: unknown) {
@@ -39,8 +57,14 @@ function db(applied: unknown) {
 beforeEach(() => {
   runQualifier.mockReset().mockResolvedValue({
     output: {
-      reply: "Hola Ana", budget: null, down_payment: null, term_months: null,
-      intent: "informacion", tags_to_add: [], appointment_requested: false, summary: "",
+      reply: "Hola Ana",
+      budget: null,
+      down_payment: null,
+      term_months: null,
+      intent: "informacion",
+      tags_to_add: [],
+      appointment_requested: false,
+      summary: "",
     },
     usage: { input: 1, output: 1, total: 2 },
   });

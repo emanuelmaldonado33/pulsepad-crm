@@ -10,7 +10,11 @@ export function exportFlow(f: Flow, materialName: (id: string | null) => string 
     name: f.name,
     trigger: { type: f.triggerType, value: f.triggerValue },
     stopOnReply: f.stopOnReply,
-    steps: f.steps.map(({ id: _id, ...s }) => (s.type === "message" ? { type: s.type, text: s.text, material: materialName(s.materialId) } : s)),
+    steps: f.steps.map(({ id: _id, ...s }) =>
+      s.type === "message"
+        ? { type: s.type, text: s.text, material: materialName(s.materialId) }
+        : s,
+    ),
   };
 }
 
@@ -23,8 +27,10 @@ const unitOf = (u: unknown): WaitUnit => {
   if (/^(d|días?|dias?|days?)$/.test(s)) return "day";
   return "hour";
 };
-const str = (v: unknown, max: number) => (typeof v === "string" ? v : v == null ? "" : String(v)).slice(0, max);
-const tagify = (v: unknown) => str(v, 40).trim().toLowerCase().replace(/^#/, "").replace(/\s+/g, "-");
+const str = (v: unknown, max: number) =>
+  (typeof v === "string" ? v : v == null ? "" : String(v)).slice(0, max);
+const tagify = (v: unknown) =>
+  str(v, 40).trim().toLowerCase().replace(/^#/, "").replace(/\s+/g, "-");
 const stageOf = (v: unknown) => {
   const n = Number(String(v ?? "").replace(/^p/i, ""));
   return Number.isInteger(n) && n >= 0 && n <= 7 ? String(n) : null;
@@ -34,8 +40,15 @@ const stageOf = (v: unknown) => {
  * Valida y normaliza un flujo desde JSON (archivo importado, código pegado o salida de la IA).
  * Lanza Error con mensaje en español si no es utilizable.
  */
-export function parseFlow(input: unknown, accountId: string, materials: { id: string; name: string }[]): Flow {
-  const o = (typeof input === "object" && input !== null ? input : null) as Record<string, unknown> | null;
+export function parseFlow(
+  input: unknown,
+  accountId: string,
+  materials: { id: string; name: string }[],
+): Flow {
+  const o = (typeof input === "object" && input !== null ? input : null) as Record<
+    string,
+    unknown
+  > | null;
   if (!o) throw new Error("El contenido no es un objeto JSON de flujo");
   const trig = (o["trigger"] ?? {}) as Record<string, unknown>;
   const rawType = str(trig["type"] ?? o["triggerType"] ?? o["trigger_type"], 20);
@@ -56,7 +69,12 @@ export function parseFlow(input: unknown, accountId: string, materials: { id: st
   const findMat = (v: unknown) => {
     const s = str(v, 200).trim().toLowerCase();
     if (!s) return null;
-    return materials.find((m) => m.id === s || m.name.toLowerCase() === s)?.id ?? materials.find((m) => m.name.toLowerCase().includes(s) || s.includes(m.name.toLowerCase()))?.id ?? null;
+    return (
+      materials.find((m) => m.id === s || m.name.toLowerCase() === s)?.id ??
+      materials.find((m) => m.name.toLowerCase().includes(s) || s.includes(m.name.toLowerCase()))
+        ?.id ??
+      null
+    );
   };
 
   const steps: FlowStep[] = rawSteps.map((r, i) => {
@@ -104,7 +122,12 @@ export function parseFlow(input: unknown, accountId: string, materials: { id: st
 export function extractJson(text: string): unknown {
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text)?.[1];
   const src = fenced ?? text;
-  const a = src.indexOf("{"), b = src.lastIndexOf("}");
+  const a = src.indexOf("{"),
+    b = src.lastIndexOf("}");
   if (a < 0 || b <= a) throw new Error("No se encontró un JSON de flujo");
-  try { return JSON.parse(src.slice(a, b + 1)); } catch { throw new Error("El JSON del flujo no es válido"); }
+  try {
+    return JSON.parse(src.slice(a, b + 1));
+  } catch {
+    throw new Error("El JSON del flujo no es válido");
+  }
 }

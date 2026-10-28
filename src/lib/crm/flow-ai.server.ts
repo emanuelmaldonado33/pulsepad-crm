@@ -33,5 +33,13 @@ export async function draftFlowWithClaude(system: string, prompt: string) {
   const text = await result.text;
   const finish = await result.finishReason;
   const usage = await result.totalUsage;
-  return { text, finish, usage: { input: usage.inputTokens ?? 0, output: usage.outputTokens ?? 0, total: usage.totalTokens ?? 0 } };
+  return {
+    text,
+    finish,
+    usage: {
+      input: usage.inputTokens ?? 0,
+      output: usage.outputTokens ?? 0,
+      total: usage.totalTokens ?? 0,
+    },
+  };
 }

@@ -45,9 +45,15 @@ export const getWhatsAppStatus = createServerFn({ method: "POST" })
     if (error) throw new Error("No se pudo cargar la configuración de WhatsApp");
     const hasOutgoingConfig = !!ch && !!ch.phone_number_id && !!ch.access_token;
     const outgoingReady = !!ch?.enabled && hasOutgoingConfig && !ch.last_error;
-    const incomingReady = !!ch?.enabled && !!ch.phone_number_id && !!ch.app_secret && !!ch.verify_token;
+    const incomingReady =
+      !!ch?.enabled && !!ch.phone_number_id && !!ch.app_secret && !!ch.verify_token;
     return {
-      mode: !ch || !ch.enabled || !hasOutgoingConfig ? "simulacion" : ch.last_error ? "desconectado" : "conectado",
+      mode:
+        !ch || !ch.enabled || !hasOutgoingConfig
+          ? "simulacion"
+          : ch.last_error
+            ? "desconectado"
+            : "conectado",
       enabled: ch?.enabled ?? false,
       phoneNumberId: ch?.phone_number_id ?? "",
       wabaId: ch?.waba_id ?? "",
@@ -64,17 +70,23 @@ export const getWhatsAppStatus = createServerFn({ method: "POST" })
 export const saveWhatsApp = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) =>
-    z.object({
-      accountId: z.string().min(1).max(100),
-      phoneNumberId: z.string().trim().max(40).regex(/^\d*$/, "Phone Number ID debe ser numérico"),
-      wabaId: z.string().trim().max(40).regex(/^\d*$/, "WABA ID debe ser numérico"),
-      accessToken: z.string().trim().max(1000).optional(),
-      appSecret: z.string().trim().max(200).optional(),
-      clearAccessToken: z.boolean().optional().default(false),
-      clearAppSecret: z.boolean().optional().default(false),
-      verifyToken: z.string().trim().min(1).max(200),
-      enabled: z.boolean(),
-    }).parse(d),
+    z
+      .object({
+        accountId: z.string().min(1).max(100),
+        phoneNumberId: z
+          .string()
+          .trim()
+          .max(40)
+          .regex(/^\d*$/, "Phone Number ID debe ser numérico"),
+        wabaId: z.string().trim().max(40).regex(/^\d*$/, "WABA ID debe ser numérico"),
+        accessToken: z.string().trim().max(1000).optional(),
+        appSecret: z.string().trim().max(200).optional(),
+        clearAccessToken: z.boolean().optional().default(false),
+        clearAppSecret: z.boolean().optional().default(false),
+        verifyToken: z.string().trim().min(1).max(200),
+        enabled: z.boolean(),
+      })
+      .parse(d),
   )
   .handler(async ({ data, context }) => {
     const supabaseAdmin = await requireWhatsAppAdmin(data.accountId, context.userId);
@@ -109,7 +121,9 @@ export const saveWhatsApp = createServerFn({ method: "POST" })
 /** Envío manual del asesor desde la Bandeja: guarda y despacha por WhatsApp si hay canal. */
 export const sendAdvisorMessage = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ leadId: z.string().min(1), text: z.string().trim().min(1).max(4000) }).parse(d))
+  .inputValidator((d: unknown) =>
+    z.object({ leadId: z.string().min(1), text: z.string().trim().min(1).max(4000) }).parse(d),
+  )
   .handler(async ({ data, context }) => {
     const sb = context.supabase;
     const { data: lead, error: leadError } = await sb

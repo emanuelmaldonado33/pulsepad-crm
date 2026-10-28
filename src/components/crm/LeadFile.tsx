@@ -13,7 +13,17 @@ export function stageLabel(l: Lead) {
   return `${STAGES[l.stage]!.code} · ${STAGES[l.stage]!.name}`;
 }
 
-function NumField({ label, value, onChange, suffix }: { label: string; value: number | null; onChange: (v: number | null) => void; suffix?: string }) {
+function NumField({
+  label,
+  value,
+  onChange,
+  suffix,
+}: {
+  label: string;
+  value: number | null;
+  onChange: (v: number | null) => void;
+  suffix?: string;
+}) {
   return (
     <label className="block">
       <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
@@ -32,7 +42,9 @@ function NumField({ label, value, onChange, suffix }: { label: string; value: nu
 
 export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean }) {
   const { updateLead, account } = useCrm();
-  const quick = Array.from(new Set([...Object.keys(TAG_RULES), ...account.standardTags])).filter((t) => !lead.tags.includes(t));
+  const quick = Array.from(new Set([...Object.keys(TAG_RULES), ...account.standardTags])).filter(
+    (t) => !lead.tags.includes(t),
+  );
   const [newTag, setNewTag] = useState("");
   const set = (patch: Partial<Lead>) => updateLead(lead.id, (l) => ({ ...l, ...patch }));
 
@@ -43,7 +55,8 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
     const next = applyTag(lead, tag);
     updateLead(lead.id, () => next);
     if (before.stage !== next.stage) toast(`Etiqueta «${tag}» movió a ${stageLabel(next)}`);
-    if (before.botActive !== next.botActive) toast(`Bot ${next.botActive ? "reactivado" : "pausado"} por etiqueta «${tag}»`);
+    if (before.botActive !== next.botActive)
+      toast(`Bot ${next.botActive ? "reactivado" : "pausado"} por etiqueta «${tag}»`);
     setNewTag("");
   };
 
@@ -51,8 +64,12 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
     <div className="space-y-5 p-4">
       <div>
         <div className="font-display text-lg font-semibold">{lead.name}</div>
-        <div className="text-sm text-muted-foreground">{lead.phone} · {lead.source}</div>
-        <div className="mt-2 inline-block rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">{stageLabel(lead)}</div>
+        <div className="text-sm text-muted-foreground">
+          {lead.phone} · {lead.source}
+        </div>
+        <div className="mt-2 inline-block rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
+          {stageLabel(lead)}
+        </div>
       </div>
 
       <section className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3">
@@ -65,10 +82,30 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
           </>
         ) : (
           <>
-            <NumField label="Presupuesto" value={lead.budget} onChange={(v) => set({ budget: v })} />
-            <NumField label="Enganche" value={lead.downPayment} onChange={(v) => set({ downPayment: v })} />
-            <NumField label="Plazo" value={lead.termMonths} onChange={(v) => set({ termMonths: v })} suffix="meses" />
-            <Kv k="Saldo a financiar" v={lead.budget != null && lead.downPayment != null ? money(lead.budget - lead.downPayment) : "—"} />
+            <NumField
+              label="Presupuesto"
+              value={lead.budget}
+              onChange={(v) => set({ budget: v })}
+            />
+            <NumField
+              label="Enganche"
+              value={lead.downPayment}
+              onChange={(v) => set({ downPayment: v })}
+            />
+            <NumField
+              label="Plazo"
+              value={lead.termMonths}
+              onChange={(v) => set({ termMonths: v })}
+              suffix="meses"
+            />
+            <Kv
+              k="Saldo a financiar"
+              v={
+                lead.budget != null && lead.downPayment != null
+                  ? money(lead.budget - lead.downPayment)
+                  : "—"
+              }
+            />
           </>
         )}
       </section>
@@ -76,11 +113,19 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
       <LeadFlows leadId={lead.id} testMode={!!readOnly} />
 
       <section>
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Etiquetas</div>
+        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+          Etiquetas
+        </div>
         <div className="flex flex-wrap gap-1.5">
-          {lead.tags.length === 0 && <span className="text-xs text-muted-foreground">Sin etiquetas</span>}
+          {lead.tags.length === 0 && (
+            <span className="text-xs text-muted-foreground">Sin etiquetas</span>
+          )}
           {lead.tags.map((t) => (
-            <TagChip key={t} tag={t} {...(readOnly ? {} : { onRemove: () => updateLead(lead.id, (l) => removeTag(l, t)) })} />
+            <TagChip
+              key={t}
+              tag={t}
+              {...(readOnly ? {} : { onRemove: () => updateLead(lead.id, (l) => removeTag(l, t)) })}
+            />
           ))}
         </div>
         {!readOnly && (
@@ -92,11 +137,21 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
                 addTag(newTag);
               }}
             >
-              <Input value={newTag} onChange={(e) => setNewTag(e.target.value)} placeholder="Nueva etiqueta" className="h-8" />
+              <Input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                placeholder="Nueva etiqueta"
+                className="h-8"
+              />
             </form>
             <div className="mt-2 flex flex-wrap gap-1">
               {quick.map((t) => (
-                <button key={t} title={TAG_RULES[t]?.label ?? "Etiqueta descriptiva"} onClick={() => addTag(t)} className="rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary">
+                <button
+                  key={t}
+                  title={TAG_RULES[t]?.label ?? "Etiqueta descriptiva"}
+                  onClick={() => addTag(t)}
+                  className="rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                >
                   +{t}
                 </button>
               ))}
@@ -105,13 +160,19 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         )}
       </section>
 
-
       <section>
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">Notas del asesor</div>
+        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+          Notas del asesor
+        </div>
         {readOnly ? (
           <p className="text-sm">{lead.notes || "—"}</p>
         ) : (
-          <Textarea value={lead.notes} onChange={(e) => set({ notes: e.target.value })} rows={4} placeholder="Escribe notas internas…" />
+          <Textarea
+            value={lead.notes}
+            onChange={(e) => set({ notes: e.target.value })}
+            rows={4}
+            placeholder="Escribe notas internas…"
+          />
         )}
       </section>
     </div>

@@ -7,4 +7,6 @@ import { runEnrollment } from "./flow-runner.server";
 export const runFlowNow = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: unknown) => z.object({ id: z.string().min(1), force: z.boolean() }).parse(d))
-  .handler(async ({ data, context }) => ({ result: await runEnrollment(context.supabase, data.id, data.force) }));
+  .handler(async ({ data, context }) => ({
+    result: await runEnrollment(context.supabase, data.id, data.force),
+  }));
