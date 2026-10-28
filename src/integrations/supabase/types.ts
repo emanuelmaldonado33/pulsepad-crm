@@ -20,6 +20,7 @@ export type Database = {
           brand: string
           brand_foreground: string
           created_at: string
+          created_by_user_id: string | null
           id: string
           initials: string
           name: string
@@ -36,6 +37,7 @@ export type Database = {
           brand: string
           brand_foreground: string
           created_at?: string
+          created_by_user_id?: string | null
           id: string
           initials: string
           name: string
@@ -52,6 +54,7 @@ export type Database = {
           brand?: string
           brand_foreground?: string
           created_at?: string
+          created_by_user_id?: string | null
           id?: string
           initials?: string
           name?: string
@@ -64,6 +67,35 @@ export type Database = {
           ticket_label?: string
         }
         Relationships: []
+      }
+      account_memberships: {
+        Row: {
+          account_id: string
+          created_at: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          role?: string
+          user_id: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "account_memberships_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       ai_usage: {
         Row: {
@@ -368,6 +400,9 @@ export type Database = {
       }
       messages: {
         Row: {
+          ai_last_error: string | null
+          ai_processing_at: string | null
+          ai_status: string
           body: string
           created_at: string
           id: string
@@ -377,6 +412,9 @@ export type Database = {
           wa_status: string | null
         }
         Insert: {
+          ai_last_error?: string | null
+          ai_processing_at?: string | null
+          ai_status?: string
           body: string
           created_at?: string
           id?: string
@@ -386,6 +424,9 @@ export type Database = {
           wa_status?: string | null
         }
         Update: {
+          ai_last_error?: string | null
+          ai_processing_at?: string | null
+          ai_status?: string
           body?: string
           created_at?: string
           id?: string

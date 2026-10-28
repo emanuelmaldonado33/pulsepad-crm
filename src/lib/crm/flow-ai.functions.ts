@@ -52,7 +52,10 @@ Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con un
       if (status === 403) return { error: "El acceso al modelo Claude no está habilitado para este espacio de trabajo.", draft: null };
       return { error: "La IA no pudo generar el flujo.", draft: null };
     }
-    await sb.from("ai_usage").insert({ account_id: acc.id, model: FLOW_AI_MODEL, input_tokens: out.usage.input, output_tokens: out.usage.output, total_tokens: out.usage.total });
+    // The account lookup above passed tenant RLS; use the server client for audit usage writes.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: usageError } = await supabaseAdmin.from("ai_usage").insert({ account_id: acc.id, model: FLOW_AI_MODEL, input_tokens: out.usage.input, output_tokens: out.usage.output, total_tokens: out.usage.total });
+    if (usageError) console.error("Flow AI usage log failed", usageError.message);
     if (out.finish === "content-filter" || !out.text.trim()) return { error: "La IA rechazó esta solicitud y no generó un flujo.", draft: null };
     try {
       return { error: null, draft: JSON.stringify(extractJson(out.text)) };

@@ -110,10 +110,13 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
         if (r !== "simulado") events.push({ kind: "bot", text: r === "enviado" ? "Respuesta enviada por WhatsApp" : "Falló el envío por WhatsApp" });
       }
     }
-    await sb.from("ai_usage").insert({
+    // The lead/account reads above passed tenant RLS; only the server writes usage rows.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: usageError } = await supabaseAdmin.from("ai_usage").insert({
       account_id: acc.id, lead_id: lead.id, model: acc.ai_model,
       input_tokens: ai.usage.input, output_tokens: ai.usage.output, total_tokens: ai.usage.total,
     });
+    if (usageError) console.error("AI usage log failed", usageError.message);
     events.push({ kind: "dato", text: `Tokens usados: ${ai.usage.total.toLocaleString("es-MX")}` });
     return { reply, events, summary: o.summary, tokens: ai.usage.total };
 }

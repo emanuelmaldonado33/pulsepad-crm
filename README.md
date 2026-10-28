@@ -32,3 +32,29 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+## Aislamiento multi-cuenta
+
+La migración `0008_tenant_whatsapp_hardening.sql` limita cada cuenta, sus leads,
+mensajes, citas, flujos, materiales, uso de IA y archivos de Storage a sus miembros.
+Las cuentas nuevas asignan como propietario al usuario autenticado que las crea.
+
+Las cuentas que ya existían antes de la migración (incluidas las cuentas de
+demostración) quedan sin propietario de forma intencional: no se asignan al primer
+usuario que se registre. Después de aplicar la migración, un administrador debe
+consultar el UUID del usuario autorizado en `auth.users` y registrar su membresía
+propietaria. En el SQL Editor de Supabase, con el UUID real, ejecutar por cada
+cuenta que deba conservarse:
+
+```sql
+INSERT INTO public.account_memberships (account_id, user_id, role)
+VALUES ('espacio-fx', 'UUID-REAL-DEL-USUARIO', 'owner')
+ON CONFLICT (account_id, user_id) DO NOTHING;
+```
+
+Repetir para `preventa-terrenos` u otras cuentas existentes. No habilitar el
+acceso de una cuenta compartida a todos los usuarios autenticados.
+
+Los propietarios pueden agregar usuarios como miembros desde el SQL Editor
+mientras el producto no incluya una pantalla de invitaciones. La tabla
+`account_memberships` exige que el usuario invitado exista en `auth.users`.
