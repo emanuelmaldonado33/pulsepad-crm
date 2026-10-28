@@ -40,6 +40,20 @@ BEGIN
 END;
 $$;
 
+-- The statement must run and touch exactly p_expected rows.
+CREATE FUNCTION test_helpers.affects(p_label text, p_sql text, p_expected bigint) RETURNS void
+LANGUAGE plpgsql AS $$
+DECLARE
+  affected bigint;
+BEGIN
+  EXECUTE p_sql;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  IF affected <> p_expected THEN
+    RAISE EXCEPTION 'FALLO [%]: afectó % filas, se esperaban %: %', p_label, affected, p_expected, p_sql;
+  END IF;
+END;
+$$;
+
 CREATE FUNCTION test_helpers.eq(p_label text, p_actual anyelement, p_expected anyelement)
 RETURNS void
 LANGUAGE plpgsql AS $$
@@ -123,9 +137,12 @@ SELECT test_helpers.denied('intruso falsea created_by_user_id',
   $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground, created_by_user_id)
     VALUES ('falsa', 'F', 'F', 'x', 'y', 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878')$$);
 
--- Su propia cuenta sí: queda como owner.
-INSERT INTO public.accounts (id, name, initials, brand, brand_foreground)
-VALUES ('mia', 'Mia', 'MI', 'x', 'y');
+-- Su propia cuenta sí: queda como owner, y puede leerla en el mismo INSERT (RETURNING).
+SELECT test_helpers.affects('crear cuenta con RETURNING',
+  $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground)
+    VALUES ('mia', 'Mia', 'MI', 'x', 'y') RETURNING id$$, 1);
+SELECT test_helpers.denied('reescribir created_by_user_id',
+  $$UPDATE public.accounts SET created_by_user_id = 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878' WHERE id = 'mia'$$);
 SELECT test_helpers.eq('creador queda como owner',
   (SELECT role FROM public.account_memberships WHERE account_id = 'mia'), 'owner'::text);
 INSERT INTO public.leads (id, account_id, name) VALUES ('L-mia', 'mia', 'yo');
@@ -144,6 +161,10 @@ SELECT test_helpers.denied('cliente fija ai_attempts',
   $$INSERT INTO public.messages (lead_id, sender, body, ai_attempts) VALUES ('L-mia', 'lead', 'x', 0)$$);
 SELECT test_helpers.denied('cliente fija ai_applied_at',
   $$INSERT INTO public.messages (lead_id, sender, body, ai_applied_at) VALUES ('L-mia', 'lead', 'x', now())$$);
+SELECT test_helpers.denied('cliente escribe como bot',
+  $$INSERT INTO public.messages (lead_id, sender, body) VALUES ('L-mia', 'bot', 'soy el bot')$$);
+SELECT test_helpers.denied('cliente escribe como lead',
+  $$INSERT INTO public.messages (lead_id, sender, body) VALUES ('L-mia', 'lead', 'soy el cliente')$$);
 INSERT INTO public.messages (lead_id, sender, body) VALUES ('L-mia', 'asesor', 'hola');
 SELECT test_helpers.denied('cliente cambia wa_status',
   $$UPDATE public.messages SET wa_status = 'enviado' WHERE lead_id = 'L-mia'$$);
@@ -168,6 +189,17 @@ SELECT test_helpers.no_rows('member no edita la cuenta',
   $$UPDATE public.accounts SET name = 'hack' WHERE id = 'espacio-fx'$$);
 SELECT test_helpers.denied('member no se asciende',
   $$UPDATE public.account_memberships SET role = 'owner' WHERE user_id = '33333333-3333-3333-3333-333333333333'$$);
+SELECT test_helpers.no_rows('member no borra leads', $$DELETE FROM public.leads WHERE id = 'fx9'$$);
+SELECT test_helpers.no_rows('member no borra flujos', $$DELETE FROM public.flows$$);
+SELECT test_helpers.no_rows('member no borra materiales', $$DELETE FROM public.materials$$);
+SELECT test_helpers.affects('member sí edita leads',
+  $$UPDATE public.leads SET notes = 'nota' WHERE id = 'fx1'$$, 1);
+RESET ROLE;
+-- El owner sí puede borrar.
+SELECT test_helpers.as_user('c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878');
+SET ROLE authenticated;
+SELECT test_helpers.affects('owner borra leads',
+  $$DELETE FROM public.leads WHERE id = 'fx9'$$, 1);
 RESET ROLE;
 
 -- Anónimo: nada.

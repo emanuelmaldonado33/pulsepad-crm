@@ -49,6 +49,17 @@ export async function runQualifier(opts: {
   system: string;
   messages: ModelMessage[];
 }) {
+  const { isClaudeModel, runClaudeQualifier } = await import("./claude.server");
+  if (isClaudeModel(opts.model)) {
+    return runClaudeQualifier({
+      model: opts.model,
+      system: opts.system,
+      messages: opts.messages.map((m) => ({
+        role: m.role === "user" ? ("user" as const) : ("assistant" as const),
+        content: typeof m.content === "string" ? m.content : "",
+      })),
+    });
+  }
   const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("La IA no está configurada (falta la clave).");
   const provider = createOpenAI({

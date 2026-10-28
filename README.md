@@ -86,6 +86,19 @@ respuesta se aplica una sola vez (`ai_applied_at`), aunque Meta reintente.
 Un `phone_number_id` solo puede pertenecer a una cuenta y solo se guarda cuando Meta
 lo confirma con el Access Token de esa cuenta.
 
+## Bot con Claude
+
+Cada subcuenta elige su modelo en Configuración → Modelo de IA. Los modelos de OpenAI
+usan la pasarela de Lovable (`LOVABLE_API_KEY`). Los modelos de Claude
+(`anthropic/claude-opus-5-5`, `anthropic/claude-sonnet-5-5`,
+`anthropic/claude-haiku-5-5`) usan tu propia API key de Anthropic: guárdala como
+secreto `ANTHROPIC_API_KEY` en Lovable Cloud. El bot pide a Claude una respuesta con el
+mismo formato estructurado (respuesta, datos, intención, etiquetas, cita) y activa el
+respaldo automático de Anthropic si el modelo declina un mensaje.
+
+El bot solo comparte enlaces de la biblioteca de materiales de la cuenta. Si no hay
+material cargado, no envía enlaces.
+
 ## Pruebas
 
 ```sh

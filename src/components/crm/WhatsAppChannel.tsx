@@ -28,6 +28,7 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
     enabled: false,
   });
   const [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const webhookUrl =
     typeof window === "undefined" ? "" : `${window.location.origin}/api/public/whatsapp/webhook`;
 
@@ -46,7 +47,13 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
     });
   }, [accountId, getStatus]);
   useEffect(() => {
-    if (accountId) void load().catch(() => toast.error("No se pudo cargar el canal"));
+    if (!accountId) return;
+    setLoadError(null);
+    // Un miembro sin rol owner/admin no puede ver credenciales: se lo decimos en lugar de
+    // dejar la tarjeta cargando.
+    void load().catch((e: unknown) =>
+      setLoadError(e instanceof Error ? e.message : "No se pudo cargar el canal"),
+    );
   }, [accountId, load]);
 
   const submit = async () => {
@@ -76,6 +83,7 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
     toast.success("Copiado");
   };
   const set = (p: Partial<typeof form>) => setForm((f) => ({ ...f, ...p }));
+  if (loadError) return <div className="p-6 text-sm text-muted-foreground">{loadError}</div>;
   if (!st) return <div className="p-6 text-sm text-muted-foreground">Cargando canal…</div>;
   const [label, cls] = BADGE[st.mode];
 
