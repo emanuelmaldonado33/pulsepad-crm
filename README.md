@@ -42,7 +42,7 @@ Las cuentas nuevas asignan como propietario al usuario autenticado que las crea.
 ### Propietario de las cuentas existentes
 
 El negocio confirmó un único propietario para todas las cuentas que ya existían:
-`c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878`. La migración lo registra como `owner` de
+`723bdc1b-0db6-4118-9d97-c8a033df9b9f`. La migración lo registra como `owner` de
 cada cuenta en el mismo paso en que activa las políticas, así que nadie pierde el
 acceso. Antes de cambiar nada, la migración comprueba que ese usuario exista en
 `auth.users` y que ningún `phone_number_id` esté repetido; si algo falla, se detiene
