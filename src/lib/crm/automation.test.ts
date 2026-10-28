@@ -3,8 +3,21 @@ import { applyTag, extractData, moveToStage, processLeadMessage } from "./automa
 import type { Lead } from "./types";
 
 const base: Lead = {
-  id: "t", accountId: "a", name: "Ana Prueba", phone: "", source: "", stage: 0, outcome: null,
-  budget: null, downPayment: null, termMonths: null, tags: [], notes: "", botActive: true, messages: [], createdAt: "",
+  id: "t",
+  accountId: "a",
+  name: "Ana Prueba",
+  phone: "",
+  source: "",
+  stage: 0,
+  outcome: null,
+  budget: null,
+  downPayment: null,
+  termMonths: null,
+  tags: [],
+  notes: "",
+  botActive: true,
+  messages: [],
+  createdAt: "",
 };
 
 describe("automatización de etiquetas", () => {

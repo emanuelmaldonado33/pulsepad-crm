@@ -26,8 +26,11 @@
   --radius-2xl: calc(var(--radius) + 8px);
   --radius-3xl: calc(var(--radius) + 12px);
   --radius-4xl: calc(var(--radius) + 16px);
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", ui-sans-serif, system-ui, sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "Geist", ui-sans-serif, system-ui,
+    sans-serif;
   --color-glass: var(--glass);
   --color-hairline: var(--hairline);
   --shadow-soft: var(--shadow-sm);
@@ -107,7 +110,9 @@
   --highlight: oklch(1 0 0 / 0.9);
   --shadow-sm: 0 0.5px 1px oklch(0 0 0 / 0.04);
   --shadow-md: 0 0.5px 1px oklch(0 0 0 / 0.04), 0 6px 20px -6px oklch(0 0 0 / 0.08);
-  --shadow-lg: 0 2px 4px oklch(0 0 0 / 0.04), 0 12px 28px oklch(0 0 0 / 0.1), 0 40px 80px -20px oklch(0 0 0 / 0.18);
+  --shadow-lg:
+    0 2px 4px oklch(0 0 0 / 0.04), 0 12px 28px oklch(0 0 0 / 0.1),
+    0 40px 80px -20px oklch(0 0 0 / 0.18);
   --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
   --chart-1: oklch(0.6 0.2 255);
   --chart-2: oklch(0.64 0.17 150);
@@ -163,18 +168,24 @@
   background-color: var(--glass);
   backdrop-filter: blur(24px) saturate(180%);
   border: 0.5px solid var(--hairline);
-  box-shadow: inset 0 0.5px 0 var(--highlight), var(--shadow-sm);
+  box-shadow:
+    inset 0 0.5px 0 var(--highlight),
+    var(--shadow-sm);
 }
 
 @utility glass-strong {
   background-color: var(--glass-strong);
   backdrop-filter: blur(40px) saturate(200%);
   border: 0.5px solid var(--hairline);
-  box-shadow: inset 0 0.5px 0 var(--highlight), var(--shadow-lg);
+  box-shadow:
+    inset 0 0.5px 0 var(--highlight),
+    var(--shadow-lg);
 }
 
 @utility lift {
-  transition: transform 0.35s var(--ease-spring), box-shadow 0.35s var(--ease-spring);
+  transition:
+    transform 0.35s var(--ease-spring),
+    box-shadow 0.35s var(--ease-spring);
   &:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
@@ -182,7 +193,11 @@
 }
 
 @utility press {
-  transition: transform 0.2s var(--ease-spring), background-color 0.2s, box-shadow 0.2s, opacity 0.2s;
+  transition:
+    transform 0.2s var(--ease-spring),
+    background-color 0.2s,
+    box-shadow 0.2s,
+    opacity 0.2s;
   &:active {
     transform: scale(0.97);
   }
@@ -208,7 +223,10 @@
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-  h1, h2, h3, .font-display {
+  h1,
+  h2,
+  h3,
+  .font-display {
     font-family: var(--font-display);
     letter-spacing: -0.022em;
   }
@@ -226,8 +244,12 @@
     font-variant-numeric: tabular-nums;
     letter-spacing: -0.01em;
   }
-  .rounded-xl.bg-card, .rounded-2xl.bg-card {
-    transition: box-shadow 0.35s var(--ease-spring), transform 0.35s var(--ease-spring), border-color 0.2s;
+  .rounded-xl.bg-card,
+  .rounded-2xl.bg-card {
+    transition:
+      box-shadow 0.35s var(--ease-spring),
+      transform 0.35s var(--ease-spring),
+      border-color 0.2s;
   }
   .rounded-xl.bg-card:hover {
     box-shadow: var(--shadow-md);
@@ -243,7 +265,9 @@
     outline: none;
   }
   @media (prefers-reduced-motion: reduce) {
-    *, *::before, *::after {
+    *,
+    *::before,
+    *::after {
       transition-duration: 0.01ms !important;
       animation-duration: 0.01ms !important;
     }

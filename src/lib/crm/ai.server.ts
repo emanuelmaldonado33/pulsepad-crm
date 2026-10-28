@@ -16,11 +16,28 @@ function createRunIdFetch() {
 }
 
 export const qualificationSchema = z.object({
-  reply: z.string().describe("Respuesta de WhatsApp para el prospecto. Vacío si se transfiere a humano sin respuesta."),
-  budget: z.number().nullable().describe("Presupuesto total en MXN si se conoce (acumulado), si no null"),
-  down_payment: z.number().nullable().describe("Enganche en MXN (convierte porcentajes a monto), si no null"),
+  reply: z
+    .string()
+    .describe(
+      "Respuesta de WhatsApp para el prospecto. Vacío si se transfiere a humano sin respuesta.",
+    ),
+  budget: z
+    .number()
+    .nullable()
+    .describe("Presupuesto total en MXN si se conoce (acumulado), si no null"),
+  down_payment: z
+    .number()
+    .nullable()
+    .describe("Enganche en MXN (convierte porcentajes a monto), si no null"),
   term_months: z.number().nullable().describe("Plazo en meses; 0 = contado; null si se desconoce"),
-  intent: z.enum(["informacion", "calificando", "listo_para_cita", "quiere_humano", "no_interesado", "seguimiento"]),
+  intent: z.enum([
+    "informacion",
+    "calificando",
+    "listo_para_cita",
+    "quiere_humano",
+    "no_interesado",
+    "seguimiento",
+  ]),
   tags_to_add: z.array(z.string()).describe("Etiquetas en minúsculas-con-guiones"),
   appointment_requested: z.boolean(),
   summary: z.string().describe("Resumen de una línea del estado del lead para el asesor"),
@@ -32,7 +49,7 @@ export async function runQualifier(opts: {
   system: string;
   messages: ModelMessage[];
 }) {
-  const apiKey = process.env['LOVABLE_API_KEY'];
+  const apiKey = process.env["LOVABLE_API_KEY"];
   if (!apiKey) throw new Error("La IA no está configurada (falta la clave).");
   const provider = createOpenAI({
     baseURL: "https://ai.gateway.lovable.dev/v1",

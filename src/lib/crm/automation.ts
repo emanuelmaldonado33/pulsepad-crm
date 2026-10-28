@@ -33,7 +33,16 @@ export const STAGE_TAG: Record<number, string | null> = {
   7: null,
 };
 
-const STAGE_TAGS = new Set(["contactado", "calificando", "video-enviado", "perfilado", "cita-agendada", "seguimiento", "ganado", "no-califica"]);
+const STAGE_TAGS = new Set([
+  "contactado",
+  "calificando",
+  "video-enviado",
+  "perfilado",
+  "cita-agendada",
+  "seguimiento",
+  "ganado",
+  "no-califica",
+]);
 
 /** Aplica una etiqueta y sus efectos automáticos. */
 export function applyTag(lead: Lead, tag: string): Lead {
@@ -45,7 +54,8 @@ export function applyTag(lead: Lead, tag: string): Lead {
     next = { ...next, tags, stage: rule.stage, outcome: rule.outcome ?? null };
   }
   if (rule?.bot !== undefined) next.botActive = rule.bot;
-  if (tag === "reactivar-bot") next.tags = next.tags.filter((t) => t !== "humano" && t !== "reactivar-bot");
+  if (tag === "reactivar-bot")
+    next.tags = next.tags.filter((t) => t !== "humano" && t !== "reactivar-bot");
   if (tag === "humano") next.tags = next.tags.filter((t) => t !== "reactivar-bot");
   return next;
 }
@@ -61,7 +71,13 @@ export function moveToStage(lead: Lead, stage: number, outcome: Outcome = null):
   if (stage === 7) return applyTag(lead, outcome === "no_califica" ? "no-califica" : "ganado");
   const tag = STAGE_TAG[stage];
   if (tag) return applyTag(lead, tag);
-  return { ...lead, stage: 0, outcome: null, botActive: true, tags: lead.tags.filter((t) => !STAGE_TAGS.has(t)) };
+  return {
+    ...lead,
+    stage: 0,
+    outcome: null,
+    botActive: true,
+    tags: lead.tags.filter((t) => !STAGE_TAGS.has(t)),
+  };
 }
 
 export function setBot(lead: Lead, active: boolean): Lead {
@@ -99,7 +115,12 @@ export function extractData(text: string): Extraction {
   if (downPct) out.downPaymentPct = parseInt(downPct[1]!, 10);
   else if (down) out.downPayment = parseAmount(down[1]!, down[2]);
 
-  const budget = t.match(new RegExp(String.raw`(?:presupuesto|invertir|inversi[oó]n|gastar|tengo|hasta|alrededor de|como)[^\d$]{0,20}` + AMOUNT));
+  const budget = t.match(
+    new RegExp(
+      String.raw`(?:presupuesto|invertir|inversi[oó]n|gastar|tengo|hasta|alrededor de|como)[^\d$]{0,20}` +
+        AMOUNT,
+    ),
+  );
   if (budget && !(down && budget.index === down.index)) {
     const v = parseAmount(budget[1]!, budget[2]);
     if (v >= 1000) out.budget = v;
@@ -111,9 +132,11 @@ export function extractData(text: string): Extraction {
   else if (years) out.termMonths = parseInt(years[1]!, 10) * 12;
   else if (/de contado|contado/.test(t)) out.termMonths = 0;
 
-  if (/(agendar|agenda|cita|llamada|reuni[oó]n|visita|videollamada)/.test(t)) out.wantsAppointment = true;
+  if (/(agendar|agenda|cita|llamada|reuni[oó]n|visita|videollamada)/.test(t))
+    out.wantsAppointment = true;
   if (/(asesor|humano|una persona|hablar con alguien|ejecutivo)/.test(t)) out.wantsHuman = true;
-  if (/(no me interesa|muy caro|no tengo dinero|no califico|ya no|d[eé]jame de escribir)/.test(t)) out.notInterested = true;
+  if (/(no me interesa|muy caro|no tengo dinero|no califico|ya no|d[eé]jame de escribir)/.test(t))
+    out.notInterested = true;
   return out;
 }
 
@@ -149,8 +172,10 @@ export function processLeadMessage(input: Lead, text: string, product: string): 
     const before = lead;
     lead = applyTag(lead, t);
     events.push({ kind: "etiqueta", text: `Etiqueta «${t}» asignada` });
-    if (before.stage !== lead.stage) events.push({ kind: "etapa", text: `Etapa P${before.stage} → P${lead.stage}` });
-    if (before.botActive !== lead.botActive) events.push({ kind: "bot", text: lead.botActive ? "Bot reactivado" : "Bot pausado" });
+    if (before.stage !== lead.stage)
+      events.push({ kind: "etapa", text: `Etapa P${before.stage} → P${lead.stage}` });
+    if (before.botActive !== lead.botActive)
+      events.push({ kind: "bot", text: lead.botActive ? "Bot reactivado" : "Bot pausado" });
   };
 
   if (!input.botActive) {
@@ -175,16 +200,29 @@ export function processLeadMessage(input: Lead, text: string, product: string): 
   }
   if (ex.termMonths !== undefined) {
     lead = { ...lead, termMonths: ex.termMonths };
-    events.push({ kind: "dato", text: `Plazo: ${ex.termMonths === 0 ? "contado" : ex.termMonths + " meses"}` });
+    events.push({
+      kind: "dato",
+      text: `Plazo: ${ex.termMonths === 0 ? "contado" : ex.termMonths + " meses"}`,
+    });
   }
 
   if (ex.notInterested) {
     tag("no-califica");
-    return { lead, reply: "Entiendo, gracias por tu tiempo. Si en el futuro te interesa, aquí estaremos. 🙌", events, bookAppointment: false };
+    return {
+      lead,
+      reply: "Entiendo, gracias por tu tiempo. Si en el futuro te interesa, aquí estaremos. 🙌",
+      events,
+      bookAppointment: false,
+    };
   }
   if (ex.wantsHuman) {
     tag("humano");
-    return { lead, reply: "Claro, te comunico con un asesor. En breve te escribe personalmente. 👤", events, bookAppointment: false };
+    return {
+      lead,
+      reply: "Claro, te comunico con un asesor. En breve te escribe personalmente. 👤",
+      events,
+      bookAppointment: false,
+    };
   }
 
   const gotData = ex.budget || ex.downPayment || ex.downPaymentPct || ex.termMonths !== undefined;
@@ -200,14 +238,21 @@ export function processLeadMessage(input: Lead, text: string, product: string): 
   if (ex.wantsAppointment && lead.stage >= 3) {
     tag("cita-agendada");
     events.push({ kind: "cita", text: "Cita creada en la agenda" });
-    return { lead, reply: "¡Listo! Agendé tu llamada con un asesor para mañana a las 11:00. Te enviaremos recordatorio. 📅", events, bookAppointment: true };
+    return {
+      lead,
+      reply:
+        "¡Listo! Agendé tu llamada con un asesor para mañana a las 11:00. Te enviaremos recordatorio. 📅",
+      events,
+      bookAppointment: true,
+    };
   }
 
   let reply: string;
   if (lead.budget == null) {
-    reply = lead.stage <= 1 && !gotData
-      ? `¡Hola ${lead.name.split(" ")[0]}! Gracias por tu interés en ${product}. Para orientarte mejor, ¿qué presupuesto aproximado tienes en mente?`
-      : "Perfecto. ¿Con qué presupuesto aproximado te gustaría invertir?";
+    reply =
+      lead.stage <= 1 && !gotData
+        ? `¡Hola ${lead.name.split(" ")[0]}! Gracias por tu interés en ${product}. Para orientarte mejor, ¿qué presupuesto aproximado tienes en mente?`
+        : "Perfecto. ¿Con qué presupuesto aproximado te gustaría invertir?";
   } else if (lead.stage < 3) {
     tag("video-enviado");
     reply = `Excelente, con ${money(lead.budget)} tenemos opciones para ti. Te comparto este video con los detalles 🎥 https://demo.video/${lead.accountId}. ¿Cuánto podrías dar de enganche?`;
@@ -216,7 +261,8 @@ export function processLeadMessage(input: Lead, text: string, product: string): 
   } else if (lead.termMonths == null) {
     reply = "¿En qué plazo te gustaría liquidarlo? (por ejemplo 12, 24 o 36 meses, o de contado)";
   } else {
-    reply = "¡Tu perfil está completo! ✅ ¿Te gustaría agendar una llamada con un asesor para revisar opciones?";
+    reply =
+      "¡Tu perfil está completo! ✅ ¿Te gustaría agendar una llamada con un asesor para revisar opciones?";
   }
   return { lead, reply, events, bookAppointment: false };
 }

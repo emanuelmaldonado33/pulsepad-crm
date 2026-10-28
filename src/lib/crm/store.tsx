@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Account, Appointment, Lead, Message } from "./types";
@@ -45,7 +54,9 @@ interface Ctx {
   addMaterial: (m: Omit<Material, "id">) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
   uploadMaterial: (file: File, name: string) => Promise<boolean>;
-  importLeads: (rows: { name: string; phone: string; budget: number | null; tag: string | null }[]) => Promise<number>;
+  importLeads: (
+    rows: { name: string; phone: string; budget: number | null; tag: string | null }[],
+  ) => Promise<number>;
 }
 
 const CrmContext = createContext<Ctx | null>(null);
@@ -58,17 +69,43 @@ const fail = (what: string, e: { message: string } | null) => {
   }
 };
 
-const PLACEHOLDER: Account = { id: "", name: "Cargando…", initials: "··", tagline: "", brand: "oklch(0.5 0.02 260)", brandForeground: "oklch(0.98 0 0)", product: "", ticketLabel: "", setterPrompt: "", qualificationRules: "", aiModel: "", template: "", standardTags: [] };
+const PLACEHOLDER: Account = {
+  id: "",
+  name: "Cargando…",
+  initials: "··",
+  tagline: "",
+  brand: "oklch(0.5 0.02 260)",
+  brandForeground: "oklch(0.98 0 0)",
+  product: "",
+  ticketLabel: "",
+  setterPrompt: "",
+  qualificationRules: "",
+  aiModel: "",
+  template: "",
+  standardTags: [],
+};
 
 export function CrmProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<State>({ accounts: [], leads: [], appointments: [], flows: [], enrollments: [], materials: [] });
+  const [state, setState] = useState<State>({
+    accounts: [],
+    leads: [],
+    appointments: [],
+    flows: [],
+    enrollments: [],
+    materials: [],
+  });
   const [activeId, setActiveId] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const apiRef = useRef<Ctx | null>(null);
   const runNow = useServerFn(runFlowNow);
   const runRef = useRef<(id: string, force: boolean) => Promise<void>>(async () => {});
   runRef.current = async (id, force) => {
-    try { await runNow({ data: { id, force } }); } catch (e) { console.error(e); toast.error("No se pudo ejecutar el flujo"); }
+    try {
+      await runNow({ data: { id, force } });
+    } catch (e) {
+      console.error(e);
+      toast.error("No se pudo ejecutar el flujo");
+    }
     await reload();
   };
   const stateRef = useRef(state);
@@ -81,7 +118,11 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       supabase.from("messages").select("*").order("created_at").limit(5000),
       supabase.from("appointments").select("*").order("at"),
       supabase.from("flows").select("*").order("created_at"),
-      supabase.from("flow_enrollments").select("*").order("created_at", { ascending: false }).limit(5000),
+      supabase
+        .from("flow_enrollments")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(5000),
       supabase.from("materials").select("*").order("created_at"),
     ]);
     const err = a.error || l.error || m.error || ap.error || fl.error || en.error || ma.error;
@@ -98,7 +139,14 @@ export function CrmProvider({ children }: { children: ReactNode }) {
       appointments: (ap.data ?? []).map(toAppointment),
       flows: (fl.data ?? []).map(toFlow),
       enrollments: (en.data ?? []).map(toEnrollment),
-      materials: (ma.data ?? []).map((r) => ({ id: r.id, accountId: r.account_id, name: r.name, kind: r.kind as Material["kind"], url: r.url, storagePath: r.storage_path })),
+      materials: (ma.data ?? []).map((r) => ({
+        id: r.id,
+        accountId: r.account_id,
+        name: r.name,
+        kind: r.kind as Material["kind"],
+        url: r.url,
+        storagePath: r.storage_path,
+      })),
     });
     setLoading(false);
   }, []);
@@ -109,7 +157,8 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   }, [reload]);
 
   const value = useMemo<Ctx>(() => {
-    const account = state.accounts.find((a) => a.id === activeId) ?? state.accounts[0] ?? PLACEHOLDER;
+    const account =
+      state.accounts.find((a) => a.id === activeId) ?? state.accounts[0] ?? PLACEHOLDER;
     return {
       loading,
       accounts: state.accounts,
@@ -123,11 +172,21 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         if (!cur) return;
         const next = { ...cur, ...patch };
         setState((s) => ({ ...s, accounts: s.accounts.map((a) => (a.id === id ? next : a)) }));
-        const { error } = await supabase.from("accounts").update({
-          name: next.name, initials: next.initials, tagline: next.tagline, brand: next.brand,
-          brand_foreground: next.brandForeground, product: next.product, ticket_label: next.ticketLabel,
-          setter_prompt: next.setterPrompt, qualification_rules: next.qualificationRules, ai_model: next.aiModel,
-        }).eq("id", id);
+        const { error } = await supabase
+          .from("accounts")
+          .update({
+            name: next.name,
+            initials: next.initials,
+            tagline: next.tagline,
+            brand: next.brand,
+            brand_foreground: next.brandForeground,
+            product: next.product,
+            ticket_label: next.ticketLabel,
+            setter_prompt: next.setterPrompt,
+            qualification_rules: next.qualificationRules,
+            ai_model: next.aiModel,
+          })
+          .eq("id", id);
         fail("guardar la subcuenta", error);
       },
       leads: state.leads.filter((l) => l.accountId === account.id),
@@ -138,15 +197,35 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         if (!cur) return;
         const next = fn(cur);
         setState((s) => ({ ...s, leads: s.leads.map((l) => (l.id === id ? next : l)) }));
-        void supabase.from("leads").update(leadPatch(next)).eq("id", id).then(({ error }) => fail("guardar el lead", error));
+        void supabase
+          .from("leads")
+          .update(leadPatch(next))
+          .eq("id", id)
+          .then(({ error }) => fail("guardar el lead", error));
       },
       addMessage: async (leadId, from, text) => {
-        const { data, error } = await supabase.from("messages").insert({ lead_id: leadId, sender: from, body: text }).select().single();
+        const { data, error } = await supabase
+          .from("messages")
+          .insert({ lead_id: leadId, sender: from, body: text })
+          .select()
+          .single();
         if (error || !data) return fail("enviar el mensaje", error);
-        setState((s) => ({ ...s, leads: s.leads.map((l) => (l.id === leadId ? { ...l, messages: [...l.messages, toMessage(data)] } : l)) }));
+        setState((s) => ({
+          ...s,
+          leads: s.leads.map((l) =>
+            l.id === leadId ? { ...l, messages: [...l.messages, toMessage(data)] } : l,
+          ),
+        }));
       },
       createLead: async (l) => {
-        const { data, error } = await supabase.from("leads").insert({ account_id: l.accountId, ...leadPatch({ ...l, id: "", messages: [], createdAt: "" }) }).select().single();
+        const { data, error } = await supabase
+          .from("leads")
+          .insert({
+            account_id: l.accountId,
+            ...leadPatch({ ...l, id: "", messages: [], createdAt: "" }),
+          })
+          .select()
+          .single();
         if (error || !data) {
           fail("crear el lead", error);
           return null;
@@ -156,23 +235,54 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         return lead;
       },
       addAppointment: async (a) => {
-        const { data, error } = await supabase.from("appointments").insert({ account_id: a.accountId, lead_id: a.leadId, at: a.at, kind: a.kind, status: a.status }).select().single();
+        const { data, error } = await supabase
+          .from("appointments")
+          .insert({
+            account_id: a.accountId,
+            lead_id: a.leadId,
+            at: a.at,
+            kind: a.kind,
+            status: a.status,
+          })
+          .select()
+          .single();
         if (error || !data) return fail("crear la cita", error);
         setState((s) => ({ ...s, appointments: [...s.appointments, toAppointment(data)] }));
       },
       updateAppointment: (id, patch) => {
-        setState((s) => ({ ...s, appointments: s.appointments.map((a) => (a.id === id ? { ...a, ...patch } : a)) }));
-        void supabase.from("appointments").update({ ...(patch.status ? { status: patch.status } : {}), ...(patch.at ? { at: patch.at } : {}) }).eq("id", id).then(({ error }) => fail("actualizar la cita", error));
+        setState((s) => ({
+          ...s,
+          appointments: s.appointments.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+        }));
+        void supabase
+          .from("appointments")
+          .update({
+            ...(patch.status ? { status: patch.status } : {}),
+            ...(patch.at ? { at: patch.at } : {}),
+          })
+          .eq("id", id)
+          .then(({ error }) => fail("actualizar la cita", error));
       },
       reload,
       flows: state.flows.filter((f) => f.accountId === account.id),
       enrollments: state.enrollments.filter((e) => e.accountId === account.id),
       materials: state.materials.filter((m) => m.accountId === account.id),
       saveFlow: async (f, isNew) => {
-        const row = { account_id: f.accountId, name: f.name, active: f.active, trigger_type: f.triggerType, trigger_value: f.triggerValue, steps: f.steps as unknown as Json, stop_on_reply: f.stopOnReply };
+        const row = {
+          account_id: f.accountId,
+          name: f.name,
+          active: f.active,
+          trigger_type: f.triggerType,
+          trigger_value: f.triggerValue,
+          steps: f.steps as unknown as Json,
+          stop_on_reply: f.stopOnReply,
+        };
         if (isNew) {
           const { data, error } = await supabase.from("flows").insert(row).select().single();
-          if (error || !data) { fail("crear el flujo", error); return false; }
+          if (error || !data) {
+            fail("crear el flujo", error);
+            return false;
+          }
           setState((s) => ({ ...s, flows: [...s.flows, toFlow(data)] }));
           return true;
         }
@@ -182,70 +292,178 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         return !error;
       },
       deleteFlow: async (id) => {
-        setState((s) => ({ ...s, flows: s.flows.filter((f) => f.id !== id), enrollments: s.enrollments.filter((e) => e.flowId !== id) }));
+        setState((s) => ({
+          ...s,
+          flows: s.flows.filter((f) => f.id !== id),
+          enrollments: s.enrollments.filter((e) => e.flowId !== id),
+        }));
         fail("eliminar el flujo", (await supabase.from("flows").delete().eq("id", id)).error);
       },
       enroll: async (flowId, leadId) => {
         const lead = stateRef.current.leads.find((l) => l.id === leadId);
         if (!lead) return;
-        const { data, error } = await supabase.from("flow_enrollments").insert({ flow_id: flowId, lead_id: leadId, account_id: lead.accountId }).select().single();
+        const { data, error } = await supabase
+          .from("flow_enrollments")
+          .insert({ flow_id: flowId, lead_id: leadId, account_id: lead.accountId })
+          .select()
+          .single();
         if (error || !data) return; // ya inscrito (índice único) u otro error
         const enr = toEnrollment(data);
-        stateRef.current = { ...stateRef.current, enrollments: [enr, ...stateRef.current.enrollments] };
+        stateRef.current = {
+          ...stateRef.current,
+          enrollments: [enr, ...stateRef.current.enrollments],
+        };
         setState((s) => ({ ...s, enrollments: [enr, ...s.enrollments] }));
         await runRef.current(enr.id, false);
       },
       cancelEnrollment: async (id, reason) => {
-        setState((s) => ({ ...s, enrollments: s.enrollments.map((e) => (e.id === id ? { ...e, status: "cancelled", cancelReason: reason } : e)) }));
-        fail("cancelar el flujo", (await supabase.from("flow_enrollments").update({ status: "cancelled", cancel_reason: reason }).eq("id", id)).error);
+        setState((s) => ({
+          ...s,
+          enrollments: s.enrollments.map((e) =>
+            e.id === id ? { ...e, status: "cancelled", cancelReason: reason } : e,
+          ),
+        }));
+        fail(
+          "cancelar el flujo",
+          (
+            await supabase
+              .from("flow_enrollments")
+              .update({ status: "cancelled", cancel_reason: reason })
+              .eq("id", id)
+          ).error,
+        );
       },
       runEnrollment: (id, force) => runRef.current(id, !!force),
       addMaterial: async (m) => {
-        const { data, error } = await supabase.from("materials").insert({ account_id: m.accountId, name: m.name, kind: m.kind, url: m.url }).select().single();
+        const { data, error } = await supabase
+          .from("materials")
+          .insert({ account_id: m.accountId, name: m.name, kind: m.kind, url: m.url })
+          .select()
+          .single();
         if (error || !data) return fail("guardar el material", error);
         setState((s) => ({ ...s, materials: [...s.materials, { ...m, id: data.id }] }));
       },
       uploadMaterial: async (file, name) => {
-        const kind: Material["kind"] = file.type === "application/pdf" ? "pdf" : file.type.startsWith("image/") ? "image" : file.type.startsWith("video/") ? "video" : "pdf";
+        const kind: Material["kind"] =
+          file.type === "application/pdf"
+            ? "pdf"
+            : file.type.startsWith("image/")
+              ? "image"
+              : file.type.startsWith("video/")
+                ? "video"
+                : "pdf";
         const path = `${account.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-80)}`;
-        const up = await supabase.storage.from("materials").upload(path, file, file.type ? { contentType: file.type } : {});
-        if (up.error) { fail("subir el archivo", up.error); return false; }
-        const sig = await supabase.storage.from("materials").createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
-        if (sig.error || !sig.data) { fail("generar el enlace", sig.error); return false; }
-        const { data, error } = await supabase.from("materials").insert({ account_id: account.id, name, kind, url: sig.data.signedUrl, storage_path: path }).select().single();
-        if (error || !data) { fail("guardar el material", error); return false; }
-        setState((s) => ({ ...s, materials: [...s.materials, { id: data.id, accountId: account.id, name, kind, url: data.url, storagePath: path }] }));
+        const up = await supabase.storage
+          .from("materials")
+          .upload(path, file, file.type ? { contentType: file.type } : {});
+        if (up.error) {
+          fail("subir el archivo", up.error);
+          return false;
+        }
+        const sig = await supabase.storage
+          .from("materials")
+          .createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+        if (sig.error || !sig.data) {
+          fail("generar el enlace", sig.error);
+          return false;
+        }
+        const { data, error } = await supabase
+          .from("materials")
+          .insert({
+            account_id: account.id,
+            name,
+            kind,
+            url: sig.data.signedUrl,
+            storage_path: path,
+          })
+          .select()
+          .single();
+        if (error || !data) {
+          fail("guardar el material", error);
+          return false;
+        }
+        setState((s) => ({
+          ...s,
+          materials: [
+            ...s.materials,
+            { id: data.id, accountId: account.id, name, kind, url: data.url, storagePath: path },
+          ],
+        }));
         return true;
       },
       deleteMaterial: async (id) => {
         const m = stateRef.current.materials.find((x) => x.id === id);
         if (m?.storagePath) await supabase.storage.from("materials").remove([m.storagePath]);
         setState((s) => ({ ...s, materials: s.materials.filter((m) => m.id !== id) }));
-        fail("eliminar el material", (await supabase.from("materials").delete().eq("id", id)).error);
+        fail(
+          "eliminar el material",
+          (await supabase.from("materials").delete().eq("id", id)).error,
+        );
       },
       createAccount: async (a) => {
         const { error } = await supabase.from("accounts").insert({
-          id: a.id, name: a.name, initials: a.initials, tagline: a.tagline, brand: a.brand, brand_foreground: a.brandForeground,
-          product: a.product, ticket_label: a.ticketLabel, setter_prompt: a.setterPrompt, qualification_rules: a.qualificationRules,
-          ai_model: a.aiModel, template: a.template, standard_tags: a.standardTags,
+          id: a.id,
+          name: a.name,
+          initials: a.initials,
+          tagline: a.tagline,
+          brand: a.brand,
+          brand_foreground: a.brandForeground,
+          product: a.product,
+          ticket_label: a.ticketLabel,
+          setter_prompt: a.setterPrompt,
+          qualification_rules: a.qualificationRules,
+          ai_model: a.aiModel,
+          template: a.template,
+          standard_tags: a.standardTags,
         });
-        if (error) { fail("crear la subcuenta", error); return false; }
+        if (error) {
+          fail("crear la subcuenta", error);
+          return false;
+        }
         setState((s) => ({ ...s, accounts: [...s.accounts, a] }));
         localStorage.setItem(ACTIVE_KEY, a.id);
         setActiveId(a.id);
         return true;
       },
       importLeads: async (rows) => {
-        const base = { id: "", accountId: account.id, name: "", phone: "", source: "Importación CSV", stage: 0, outcome: null, budget: null, downPayment: null, termMonths: null, intent: null, tags: [] as string[], notes: "", botActive: true, messages: [], createdAt: "" };
+        const base = {
+          id: "",
+          accountId: account.id,
+          name: "",
+          phone: "",
+          source: "Importación CSV",
+          stage: 0,
+          outcome: null,
+          budget: null,
+          downPayment: null,
+          termMonths: null,
+          intent: null,
+          tags: [] as string[],
+          notes: "",
+          botActive: true,
+          messages: [],
+          createdAt: "",
+        };
         const payload = rows.map((r) => {
-          let l: Lead = { ...base, name: r.name.slice(0, 120), phone: r.phone.slice(0, 40), budget: r.budget };
+          let l: Lead = {
+            ...base,
+            name: r.name.slice(0, 120),
+            phone: r.phone.slice(0, 40),
+            budget: r.budget,
+          };
           if (r.tag) l = applyTag(l, r.tag.slice(0, 40));
           return { account_id: account.id, ...leadPatch(l) };
         });
         let n = 0;
         for (let i = 0; i < payload.length; i += 500) {
-          const { data, error } = await supabase.from("leads").insert(payload.slice(i, i + 500)).select();
-          if (error) { fail("importar los leads", error); break; }
+          const { data, error } = await supabase
+            .from("leads")
+            .insert(payload.slice(i, i + 500))
+            .select();
+          if (error) {
+            fail("importar los leads", error);
+            break;
+          }
           n += data?.length ?? 0;
         }
         await reload();
@@ -257,7 +475,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
 
   // Los flujos corren en el servidor 24/7; aquí solo refrescamos para ver su avance.
   useEffect(() => {
-    const t = setInterval(() => { if (document.visibilityState === "visible") void reload(); }, 20_000);
+    const t = setInterval(() => {
+      if (document.visibilityState === "visible") void reload();
+    }, 20_000);
     return () => clearInterval(t);
   }, [reload]);
 
@@ -270,5 +490,7 @@ export function useCrm() {
   return c;
 }
 
-export const money = (n: number | null | undefined) => (n == null ? "—" : "$" + n.toLocaleString("es-MX"));
-export const termLabel = (m: number | null) => (m == null ? "—" : m === 0 ? "Contado" : `${m} meses`);
+export const money = (n: number | null | undefined) =>
+  n == null ? "—" : "$" + n.toLocaleString("es-MX");
+export const termLabel = (m: number | null) =>
+  m == null ? "—" : m === 0 ? "Contado" : `${m} meses`;

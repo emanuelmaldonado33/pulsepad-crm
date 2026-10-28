@@ -9,7 +9,14 @@ import { extractJson } from "./flow-io";
 /** Pide a Claude un borrador de flujo en JSON. La validación final ocurre en el cliente con parseFlow. */
 export const generateFlowDraft = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: unknown) => z.object({ accountId: z.string().min(1).max(100), prompt: z.string().trim().min(10).max(3000) }).parse(d))
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        accountId: z.string().min(1).max(100),
+        prompt: z.string().trim().min(10).max(3000),
+      })
+      .parse(d),
+  )
   .handler(async ({ data, context }): Promise<{ error: string | null; draft: string | null }> => {
     const sb = context.supabase;
     const [{ data: acc }, { data: mats }] = await Promise.all([
@@ -47,16 +54,41 @@ Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con un
     } catch (e) {
       const status = (e as { statusCode?: number }).statusCode;
       console.error("flow AI", status, e instanceof Error ? e.message : e);
-      if (status === 402) return { error: "Sin créditos de IA disponibles. Agrega créditos en Settings → Plans & credits.", draft: null };
-      if (status === 429) return { error: "Demasiadas solicitudes a la IA. Espera unos segundos e intenta de nuevo.", draft: null };
-      if (status === 403) return { error: "El acceso al modelo Claude no está habilitado para este espacio de trabajo.", draft: null };
+      if (status === 402)
+        return {
+          error: "Sin créditos de IA disponibles. Agrega créditos en Settings → Plans & credits.",
+          draft: null,
+        };
+      if (status === 429)
+        return {
+          error: "Demasiadas solicitudes a la IA. Espera unos segundos e intenta de nuevo.",
+          draft: null,
+        };
+      if (status === 403)
+        return {
+          error: "El acceso al modelo Claude no está habilitado para este espacio de trabajo.",
+          draft: null,
+        };
       return { error: "La IA no pudo generar el flujo.", draft: null };
     }
-    await sb.from("ai_usage").insert({ account_id: acc.id, model: FLOW_AI_MODEL, input_tokens: out.usage.input, output_tokens: out.usage.output, total_tokens: out.usage.total });
-    if (out.finish === "content-filter" || !out.text.trim()) return { error: "La IA rechazó esta solicitud y no generó un flujo.", draft: null };
+    // The account lookup above passed tenant RLS; use the server client for audit usage writes.
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: usageError } = await supabaseAdmin.from("ai_usage").insert({
+      account_id: acc.id,
+      model: FLOW_AI_MODEL,
+      input_tokens: out.usage.input,
+      output_tokens: out.usage.output,
+      total_tokens: out.usage.total,
+    });
+    if (usageError) console.error("Flow AI usage log failed", usageError.message);
+    if (out.finish === "content-filter" || !out.text.trim())
+      return { error: "La IA rechazó esta solicitud y no generó un flujo.", draft: null };
     try {
       return { error: null, draft: JSON.stringify(extractJson(out.text)) };
     } catch {
-      return { error: "La IA devolvió un flujo con formato inválido. Intenta de nuevo.", draft: null };
+      return {
+        error: "La IA devolvió un flujo con formato inválido. Intenta de nuevo.",
+        draft: null,
+      };
     }
   });
