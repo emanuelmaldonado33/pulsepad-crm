@@ -71,6 +71,13 @@
       "when": 1793232000000,
       "tag": "0009_review_followups",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793232000001,
+      "tag": "0010_apply_pending_0008_0009",
+      "breakpoints": true
     }
   ]
 }
