@@ -1,16 +1,16 @@
 -- Hardens every browser-facing table around explicit account membership.
 -- Existing accounts are assigned to the owner the business confirmed
--- (c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878) so nobody loses access when RLS turns on.
+-- (723bdc1b-0db6-4118-9d97-c8a033df9b9f) so nobody loses access when RLS turns on.
 
 -- Preflight: stop before changing anything if the confirmed owner does not exist
 -- or two channels already share a phone_number_id (the unique index below would fail).
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM auth.users WHERE id = 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878'::uuid
+    SELECT 1 FROM auth.users WHERE id = '723bdc1b-0db6-4118-9d97-c8a033df9b9f'::uuid
   ) THEN
     RAISE EXCEPTION
-      'El propietario confirmado c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878 no existe en auth.users. No se aplicó ningún cambio.';
+      'El propietario confirmado 723bdc1b-0db6-4118-9d97-c8a033df9b9f no existe en auth.users. No se aplicó ningún cambio.';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -39,7 +39,7 @@ CREATE INDEX account_memberships_user_id_idx ON public.account_memberships(user_
 
 -- Every account that exists today belongs to the confirmed sole owner.
 INSERT INTO public.account_memberships (account_id, user_id, role)
-SELECT id, 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878'::uuid, 'owner'
+SELECT id, '723bdc1b-0db6-4118-9d97-c8a033df9b9f'::uuid, 'owner'
 FROM public.accounts
 ON CONFLICT (account_id, user_id) DO UPDATE SET role = 'owner';
 ALTER TABLE public.account_memberships ENABLE ROW LEVEL SECURITY;

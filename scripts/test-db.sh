@@ -6,7 +6,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-owner="c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878"
+owner="723bdc1b-0db6-4118-9d97-c8a033df9b9f"
 db="pulsepad_db_test_$$"
 db_missing_owner="${db}_no_owner"
 psql_opts=(-X -q -v ON_ERROR_STOP=1)

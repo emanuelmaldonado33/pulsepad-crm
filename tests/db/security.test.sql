@@ -85,10 +85,10 @@ SELECT test_helpers.eq(
 SELECT test_helpers.eq(
   'el propietario confirmado es owner de cada cuenta',
   (SELECT count(*) FROM public.account_memberships
-    WHERE user_id = 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878' AND role = 'owner'),
+    WHERE user_id = '723bdc1b-0db6-4118-9d97-c8a033df9b9f' AND role = 'owner'),
   (SELECT count(*) FROM public.accounts));
 
-SELECT test_helpers.as_user('c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878');
+SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
 SET ROLE authenticated;
 SELECT test_helpers.eq('owner ve todas sus cuentas',
   (SELECT count(*) FROM public.accounts), 2::bigint);
@@ -135,14 +135,14 @@ SELECT test_helpers.denied('intruso sube archivo a otra cuenta',
   $$INSERT INTO storage.objects (bucket_id, name) VALUES ('materials', 'espacio-fx/evil.pdf')$$);
 SELECT test_helpers.denied('intruso falsea created_by_user_id',
   $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground, created_by_user_id)
-    VALUES ('falsa', 'F', 'F', 'x', 'y', 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878')$$);
+    VALUES ('falsa', 'F', 'F', 'x', 'y', '723bdc1b-0db6-4118-9d97-c8a033df9b9f')$$);
 
 -- Su propia cuenta sí: queda como owner, y puede leerla en el mismo INSERT (RETURNING).
 SELECT test_helpers.affects('crear cuenta con RETURNING',
   $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground)
     VALUES ('mia', 'Mia', 'MI', 'x', 'y') RETURNING id$$, 1);
 SELECT test_helpers.denied('reescribir created_by_user_id',
-  $$UPDATE public.accounts SET created_by_user_id = 'c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878' WHERE id = 'mia'$$);
+  $$UPDATE public.accounts SET created_by_user_id = '723bdc1b-0db6-4118-9d97-c8a033df9b9f' WHERE id = 'mia'$$);
 SELECT test_helpers.eq('creador queda como owner',
   (SELECT role FROM public.account_memberships WHERE account_id = 'mia'), 'owner'::text);
 INSERT INTO public.leads (id, account_id, name) VALUES ('L-mia', 'mia', 'yo');
@@ -196,7 +196,7 @@ SELECT test_helpers.affects('member sí edita leads',
   $$UPDATE public.leads SET notes = 'nota' WHERE id = 'fx1'$$, 1);
 RESET ROLE;
 -- El owner sí puede borrar.
-SELECT test_helpers.as_user('c9a3ea5c-0210-4e7c-8e1b-1e9e8b945878');
+SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
 SET ROLE authenticated;
 SELECT test_helpers.affects('owner borra leads',
   $$DELETE FROM public.leads WHERE id = 'fx9'$$, 1);
