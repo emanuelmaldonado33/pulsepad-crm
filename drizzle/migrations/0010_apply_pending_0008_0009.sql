@@ -1,0 +1,1 @@
+COMMENT ON TABLE public.accounts IS 'Subcuentas del CRM (aisladas por account_memberships).';
