@@ -59,35 +59,37 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
         <div className="flex-1">
           <div className="font-semibold">Canal WhatsApp (Meta Cloud API)</div>
           <div className="text-sm text-muted-foreground">
-            {st.outgoingReady
-              ? "Los mensajes salientes pueden enviarse desde tu número real."
-              : "Falta completar las credenciales de envío; los mensajes quedan en modo simulación."}
+            {st.mode === "desconectado"
+              ? `Meta reportó un error: ${st.lastError ?? "revisa tus credenciales"}`
+              : st.outgoingReady
+                ? "La configuración de envío está lista."
+                : "Faltan credenciales de envío; los mensajes quedan en modo simulación."}
           </div>
           <div className="mt-1 text-xs text-muted-foreground">
             {st.incomingReady
-              ? "La recepción de mensajes entrantes está lista."
-              : "La recepción entrante requiere App Secret y Verify Token válidos."}
+              ? "La configuración de recepción está completa; confirma también el webhook en Meta."
+              : "La recepción entrante requiere App Secret y Verify Token guardados."}
           </div>
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>{label}</span>
       </section>
 
       <section className="grid gap-3 rounded-2xl border bg-card p-5 sm:grid-cols-2">
-        <Field label="Phone Number ID"><Input value={form.phoneNumberId} onChange={(e) => set({ phoneNumberId: e.target.value.trim() })} placeholder="1234567890" /></Field>
-        <Field label="WhatsApp Business Account ID (WABA)"><Input value={form.wabaId} onChange={(e) => set({ wabaId: e.target.value.trim() })} placeholder="1234567890" /></Field>
-        <Field label="Access Token" hint={st.hasToken ? "Guardado. Déjalo vacío para conservarlo." : "Token permanente de usuario del sistema."}>
-          <Input type="password" disabled={form.clearAccessToken} value={form.accessToken} onChange={(e) => set({ accessToken: e.target.value, clearAccessToken: false })} placeholder={st.hasToken ? "••••••••" : "EAAG…"} />
+        <Field id="wa-phone-number-id" label="Phone Number ID"><Input id="wa-phone-number-id" value={form.phoneNumberId} onChange={(e) => set({ phoneNumberId: e.target.value.trim() })} placeholder="1234567890" /></Field>
+        <Field id="wa-waba-id" label="WhatsApp Business Account ID (WABA)"><Input id="wa-waba-id" value={form.wabaId} onChange={(e) => set({ wabaId: e.target.value.trim() })} placeholder="1234567890" /></Field>
+        <Field id="wa-access-token" label="Access Token" hint={st.hasToken ? "Guardado. Déjalo vacío para conservarlo." : "Token permanente de usuario del sistema."}>
+          <Input id="wa-access-token" type="password" disabled={form.clearAccessToken} value={form.accessToken} onChange={(e) => set({ accessToken: e.target.value, clearAccessToken: false })} placeholder={st.hasToken ? "••••••••" : "EAAG…"} />
           {st.hasToken && <button type="button" className="text-xs text-destructive hover:underline" onClick={() => set({ clearAccessToken: !form.clearAccessToken, accessToken: "" })}>{form.clearAccessToken ? "Se eliminará el token al guardar · Cancelar" : "Eliminar token guardado"}</button>}
         </Field>
-        <Field label="App Secret" hint={st.hasAppSecret ? "Guardado. Déjalo vacío para conservarlo." : "Necesario para aceptar mensajes entrantes (firma de Meta)."}>
-          <Input type="password" disabled={form.clearAppSecret} value={form.appSecret} onChange={(e) => set({ appSecret: e.target.value, clearAppSecret: false })} placeholder={st.hasAppSecret ? "••••••••" : "App Dashboard → Configuración → Básica"} />
+        <Field id="wa-app-secret" label="App Secret" hint={st.hasAppSecret ? "Guardado. Déjalo vacío para conservarlo." : "Necesario para aceptar mensajes entrantes (firma de Meta)."}>
+          <Input id="wa-app-secret" type="password" disabled={form.clearAppSecret} value={form.appSecret} onChange={(e) => set({ appSecret: e.target.value, clearAppSecret: false })} placeholder={st.hasAppSecret ? "••••••••" : "App Dashboard → Configuración → Básica"} />
           {st.hasAppSecret && <button type="button" className="text-xs text-destructive hover:underline" onClick={() => set({ clearAppSecret: !form.clearAppSecret, appSecret: "" })}>{form.clearAppSecret ? "Se eliminará el App Secret al guardar · Cancelar" : "Eliminar App Secret guardado"}</button>}
         </Field>
-        <Field label="URL del webhook (pégala en Meta)">
-          <div className="flex gap-1"><Input readOnly value={webhookUrl} /><Button size="icon" variant="outline" onClick={() => copy(webhookUrl)} aria-label="Copiar URL"><Copy className="h-4 w-4" /></Button></div>
+        <Field id="wa-webhook-url" label="URL del webhook (pégala en Meta)">
+          <div className="flex gap-1"><Input id="wa-webhook-url" readOnly value={webhookUrl} /><Button size="icon" variant="outline" onClick={() => copy(webhookUrl)} aria-label="Copiar URL"><Copy className="h-4 w-4" /></Button></div>
         </Field>
-        <Field label="Webhook Verify Token (pégalo en Meta)">
-          <div className="flex gap-1"><Input value={form.verifyToken} onChange={(e) => set({ verifyToken: e.target.value.trim() })} /><Button size="icon" variant="outline" onClick={() => copy(form.verifyToken)} aria-label="Copiar token"><Copy className="h-4 w-4" /></Button></div>
+        <Field id="wa-verify-token" label="Webhook Verify Token (pégalo en Meta)">
+          <div className="flex gap-1"><Input id="wa-verify-token" value={form.verifyToken} onChange={(e) => set({ verifyToken: e.target.value.trim() })} /><Button size="icon" variant="outline" onClick={() => copy(form.verifyToken)} aria-label="Copiar token"><Copy className="h-4 w-4" /></Button></div>
         </Field>
         <label className="flex items-center gap-3 sm:col-span-2">
           <Switch checked={form.enabled} onCheckedChange={(v) => set({ enabled: v })} />
@@ -100,12 +102,12 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
   );
 }
 
-function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Field({ id, label, hint, children }: { id: string; label: string; hint?: string; children: React.ReactNode }) {
   return (
-    <label className="block space-y-1">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+    <div className="block space-y-1">
+      <label htmlFor={id} className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</label>
       {children}
       {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
-    </label>
+    </div>
   );
 }

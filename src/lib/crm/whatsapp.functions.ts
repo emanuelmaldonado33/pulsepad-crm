@@ -43,10 +43,11 @@ export const getWhatsAppStatus = createServerFn({ method: "POST" })
       .eq("account_id", data.accountId)
       .maybeSingle();
     if (error) throw new Error("No se pudo cargar la configuración de WhatsApp");
-    const outgoingReady = !!ch && !!ch.enabled && !!ch.phone_number_id && !!ch.access_token;
-    const incomingReady = !!ch && !!ch.enabled && !!ch.phone_number_id && !!ch.app_secret && !!ch.verify_token;
+    const hasOutgoingConfig = !!ch && !!ch.phone_number_id && !!ch.access_token;
+    const outgoingReady = !!ch?.enabled && hasOutgoingConfig && !ch.last_error;
+    const incomingReady = !!ch?.enabled && !!ch.phone_number_id && !!ch.app_secret && !!ch.verify_token;
     return {
-      mode: !ch || !ch.enabled || !outgoingReady ? "simulacion" : ch.last_error ? "desconectado" : "conectado",
+      mode: !ch || !ch.enabled || !hasOutgoingConfig ? "simulacion" : ch.last_error ? "desconectado" : "conectado",
       enabled: ch?.enabled ?? false,
       phoneNumberId: ch?.phone_number_id ?? "",
       wabaId: ch?.waba_id ?? "",
