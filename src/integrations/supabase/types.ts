@@ -195,6 +195,7 @@ export type Database = {
           account_id: string
           cancel_reason: string | null
           created_at: string
+          current_node: string | null
           current_step: number
           flow_id: string
           id: string
@@ -208,6 +209,7 @@ export type Database = {
           account_id: string
           cancel_reason?: string | null
           created_at?: string
+          current_node?: string | null
           current_step?: number
           flow_id: string
           id?: string
@@ -221,6 +223,7 @@ export type Database = {
           account_id?: string
           cancel_reason?: string | null
           created_at?: string
+          current_node?: string | null
           current_step?: number
           flow_id?: string
           id?: string

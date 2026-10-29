@@ -1,11 +1,20 @@
 import type { Account, Appointment, Lead } from "./types";
 
 export type WaitUnit = "min" | "hour" | "day";
+export type LeadNumberField = "budget" | "downPayment" | "termMonths";
+export type ConditionRule =
+  | { kind: "tag"; tag: string }
+  | { kind: "stage"; op: "eq" | "gte"; stage: string }
+  | { kind: "field"; field: LeadNumberField; op: "set" | "gte" | "lte"; value: number }
+  | { kind: "replied" }
+  | { kind: "appointment" };
 export type FlowStep =
   | { id: string; type: "message"; text: string; materialId: string | null }
   | { id: string; type: "wait"; amount: number; unit: WaitUnit }
   | { id: string; type: "wait_appt"; amount: number; unit: WaitUnit }
-  | { id: string; type: "action"; action: "add_tag" | "remove_tag" | "set_stage"; value: string };
+  | { id: string; type: "action"; action: "add_tag" | "remove_tag" | "set_stage"; value: string }
+  | { id: string; type: "condition"; rule: ConditionRule; yes: FlowStep[]; no: FlowStep[] }
+  | { id: string; type: "end" };
 
 export type TriggerType = "new_lead" | "stage" | "tag";
 
@@ -27,6 +36,8 @@ export interface Enrollment {
   accountId: string;
   status: "active" | "completed" | "cancelled";
   currentStep: number;
+  /** Id del siguiente paso a ejecutar (grafo); null = inscripción anterior, usa currentStep. */
+  currentNode: string | null;
   nextRunAt: string;
   replied: boolean;
   cancelReason: string | null;
@@ -90,6 +101,117 @@ export function renderText(
   return out;
 }
 
+/** Marca de "no queda nada por ejecutar" en flow_enrollments.current_node. */
+export const END_NODE = "$end";
+
+export interface FlowNode {
+  step: FlowStep;
+  /** Paso que sigue al terminar este (o al terminar sus ramas); null = fin del flujo. */
+  next: string | null;
+}
+
+/**
+ * Convierte los pasos (lista con ramas anidadas) en un grafo por id. Al terminar una rama
+ * el flujo continúa con el paso que sigue a la condición. Como las ramas se anidan, el grafo
+ * no puede tener ciclos.
+ */
+export function flowGraph(steps: FlowStep[]): Map<string, FlowNode> {
+  const g = new Map<string, FlowNode>();
+  const walk = (list: FlowStep[], after: string | null) =>
+    list.forEach((step, i) => {
+      const next = list[i + 1]?.id ?? after;
+      g.set(step.id, { step, next });
+      if (step.type === "condition") {
+        walk(step.yes, next);
+        walk(step.no, next);
+      }
+    });
+  walk(steps, null);
+  return g;
+}
+
+/**
+ * Paso donde retoma una inscripción. null = ya no queda nada; undefined = el paso donde iba
+ * se borró del flujo. Las inscripciones de antes de las ramas solo tienen currentStep (índice).
+ */
+export function resumeNode(
+  graph: Map<string, FlowNode>,
+  steps: FlowStep[],
+  e: Pick<Enrollment, "currentNode" | "currentStep">,
+): string | null | undefined {
+  if (e.currentNode === END_NODE) return null;
+  if (e.currentNode) return graph.has(e.currentNode) ? e.currentNode : undefined;
+  return steps[e.currentStep]?.id ?? null;
+}
+
+/** Siguiente paso tras evaluar una condición: primer paso de la rama, o lo que sigue si está vacía. */
+export const branchStart = (
+  step: Extract<FlowStep, { type: "condition" }>,
+  next: string | null,
+  ok: boolean,
+) => (ok ? step.yes : step.no)[0]?.id ?? next;
+
+/** Todos los pasos, incluidos los de las ramas. */
+export const allSteps = (steps: FlowStep[]): FlowStep[] =>
+  steps.flatMap((s) => (s.type === "condition" ? [s, ...allSteps(s.yes), ...allSteps(s.no)] : [s]));
+
+export const FIELD_LABEL: Record<LeadNumberField, string> = {
+  budget: "Presupuesto",
+  downPayment: "Enganche / monto",
+  termMonths: "Plazo (meses)",
+};
+
+export function evaluateCondition(
+  rule: ConditionRule,
+  ctx: {
+    lead: Pick<Lead, "tags" | "stage" | LeadNumberField>;
+    replied: boolean;
+    hasAppointment: boolean;
+  },
+): boolean {
+  const { lead } = ctx;
+  switch (rule.kind) {
+    case "tag":
+      return lead.tags.includes(rule.tag);
+    case "stage":
+      return rule.op === "eq"
+        ? lead.stage === Number(rule.stage)
+        : lead.stage >= Number(rule.stage);
+    case "field": {
+      const v = lead[rule.field];
+      if (v == null) return false;
+      return rule.op === "set" ? true : rule.op === "gte" ? v >= rule.value : v <= rule.value;
+    }
+    case "replied":
+      return ctx.replied;
+    case "appointment":
+      return ctx.hasAppointment;
+    default:
+      return false;
+  }
+}
+
+export function conditionLabel(rule: ConditionRule, stageName: (n: number) => string): string {
+  switch (rule.kind) {
+    case "tag":
+      return `¿Tiene la etiqueta #${rule.tag}?`;
+    case "stage":
+      return rule.op === "eq"
+        ? `¿Está en ${stageName(Number(rule.stage))}?`
+        : `¿Llegó a ${stageName(Number(rule.stage))} o más?`;
+    case "field":
+      return rule.op === "set"
+        ? `¿Tiene ${FIELD_LABEL[rule.field].toLowerCase()}?`
+        : `¿${FIELD_LABEL[rule.field]} ${rule.op === "gte" ? "≥" : "≤"} ${rule.value.toLocaleString("es-MX")}?`;
+    case "replied":
+      return "¿Respondió desde que entró al flujo?";
+    case "appointment":
+      return "¿Tiene cita programada?";
+    default:
+      return "Condición";
+  }
+}
+
 /** ¿Qué flujos activos dispara el cambio de lead? prev = undefined significa lead nuevo. */
 export function matchTriggers(
   flows: Flow[],
@@ -126,6 +248,8 @@ export interface FlowTemplate {
   triggerType: TriggerType;
   triggerValue: string;
   steps: (materials: Material[]) => FlowStep[];
+  /** Por defecto true. Los flujos que preguntan "¿respondió?" necesitan false. */
+  stopOnReply?: boolean;
 }
 
 const firstOf = (m: Material[], kind: Material["kind"]) =>
@@ -178,6 +302,46 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       },
       { id: sid(), type: "action", action: "add_tag", value: "reactivacion" },
     ],
+  },
+  {
+    key: "sin-respuesta",
+    name: "Seguimiento si no responde",
+    description:
+      "Envía el video; si a las 24h no respondió, insiste; si a los 2 días sigue sin responder, lo marca como frío.",
+    triggerType: "new_lead",
+    triggerValue: "",
+    steps: (m) => [
+      {
+        id: sid(),
+        type: "message",
+        text: "¡Hola {{nombre}}! 👋 Gracias por tu interés en {{proyecto}}. Te dejo este video corto, ¿te late que lo revisemos juntos?",
+        materialId: firstOf(m, "video"),
+      },
+      { id: sid(), type: "wait", amount: 24, unit: "hour" },
+      {
+        id: sid(),
+        type: "condition",
+        rule: { kind: "replied" },
+        yes: [{ id: sid(), type: "end" }],
+        no: [
+          {
+            id: sid(),
+            type: "message",
+            text: "{{nombre}}, ¿pudiste ver el video? Si me dices tu presupuesto aproximado te muestro la opción que más te conviene 🙂",
+            materialId: null,
+          },
+          { id: sid(), type: "wait", amount: 2, unit: "day" },
+          {
+            id: sid(),
+            type: "condition",
+            rule: { kind: "replied" },
+            yes: [],
+            no: [{ id: sid(), type: "action", action: "add_tag", value: "frio" }],
+          },
+        ],
+      },
+    ],
+    stopOnReply: false,
   },
   {
     key: "recordatorio",

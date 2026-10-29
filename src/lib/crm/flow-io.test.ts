@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exportFlow, extractJson, parseFlow } from "./flow-io";
-import type { Flow } from "./flows";
+import type { Flow, FlowStep } from "./flows";
 
 const mats = [{ id: "m1", name: "Video de avances" }];
 
@@ -45,6 +45,65 @@ describe("importar/exportar flujos", () => {
   it("rechaza flujos sin pasos o con tipos desconocidos", () => {
     expect(() => parseFlow({ steps: [] }, "a", [])).toThrow();
     expect(() => parseFlow({ steps: [{ type: "email" }] }, "a", [])).toThrow();
+  });
+  it("ida y vuelta conserva condiciones y ramas", () => {
+    const f = parseFlow(
+      {
+        stopOnReply: false,
+        steps: [
+          {
+            type: "condition",
+            rule: { kind: "replied" },
+            yes: [{ type: "end" }],
+            no: [
+              { type: "message", text: "¿Sigues ahí?", material: "Video de avances" },
+              {
+                type: "condition",
+                rule: { kind: "stage", op: "gte", stage: "P4" },
+                yes: [],
+                no: [{ type: "action", action: "add_tag", value: "#Frío" }],
+              },
+            ],
+          },
+        ],
+      },
+      "a",
+      mats,
+    );
+    expect(f.stopOnReply).toBe(false);
+    const back = parseFlow(
+      JSON.parse(
+        JSON.stringify(exportFlow(f, (id) => mats.find((m) => m.id === id)?.name ?? null)),
+      ),
+      "a",
+      mats,
+    );
+    const c = back.steps[0] as Extract<FlowStep, { type: "condition" }>;
+    expect(c.yes.map((s) => s.type)).toEqual(["end"]);
+    expect(c.no[0]).toMatchObject({ materialId: "m1" });
+    expect(c.no[1]).toMatchObject({ rule: { kind: "stage", op: "gte", stage: "4" } });
+    expect((c.no[1] as typeof c).no[0]).toMatchObject({ value: "frío" });
+  });
+  it("rechaza condiciones inválidas o demasiado anidadas", () => {
+    const cond = (rule: unknown, no: unknown[] = []) => ({ type: "condition", rule, yes: [], no });
+    expect(() => parseFlow({ steps: [cond({ kind: "tag", tag: "" })] }, "a", [])).toThrow(
+      /etiqueta/,
+    );
+    expect(() => parseFlow({ steps: [cond({ kind: "clima" })] }, "a", [])).toThrow(/desconocido/);
+    const r = { kind: "replied" };
+    expect(() => parseFlow({ steps: [cond(r, [cond(r, [cond(r, [cond(r)])])])] }, "a", [])).toThrow(
+      /Máximo 3/,
+    );
+  });
+  it("el límite de 50 pasos cuenta los de las ramas", () => {
+    const many = Array.from({ length: 30 }, () => ({ type: "wait", amount: 1, unit: "h" }));
+    expect(() =>
+      parseFlow(
+        { steps: [{ type: "condition", rule: { kind: "replied" }, yes: many, no: many }] },
+        "a",
+        [],
+      ),
+    ).toThrow(/50/);
   });
   it("extrae JSON de un bloque ```json", () => {
     expect(extractJson('Aquí está:\n```json\n{"a":1}\n```')).toEqual({ a: 1 });

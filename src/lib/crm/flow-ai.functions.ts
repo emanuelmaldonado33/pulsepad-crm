@@ -37,15 +37,22 @@ Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
     { "type": "message", "text": string, "material": string | null },   // material = nombre EXACTO de la biblioteca o null
     { "type": "wait", "amount": number, "unit": "min" | "hour" | "day" },
     { "type": "wait_appt", "amount": number, "unit": "min" | "hour" | "day" },   // espera hasta X antes de la próxima cita
-    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage", "value": string }
+    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage", "value": string },
+    { "type": "condition", "rule": Regla, "yes": [pasos], "no": [pasos] },   // rama sí/no; al terminar la rama sigue el paso de abajo
+    { "type": "end" }   // termina el flujo para ese lead
   ]
 }
+Regla = { "kind": "replied" }   // respondió desde que entró al flujo (requiere "stopOnReply": false)
+      | { "kind": "tag", "tag": string }
+      | { "kind": "stage", "op": "eq" | "gte", "stage": "0".."7" }
+      | { "kind": "field", "field": "budget" | "downPayment" | "termMonths", "op": "set" | "gte" | "lte", "value": number }
+      | { "kind": "appointment" }   // tiene cita programada
 
 Etapas: ${STAGES.map((s, i) => `${i}=${s.code} ${s.name}`).join("; ")}.
 Etiquetas con efecto automático: ${Object.keys(TAG_RULES).join(", ")}.
 Variables disponibles en mensajes: ${VARIABLES.map((v) => `{{${v}}}`).join(", ")}. Usa {{nombre}} para personalizar.
 Biblioteca de materiales: ${(mats ?? []).map((m) => `«${m.name}» (${m.kind})`).join(", ") || "vacía (usa material null)"}.
-Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con una pregunta clara al final. Separa los días con pasos "wait". No inventes enlaces. Máximo 20 pasos.`;
+Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con una pregunta clara al final. Separa los días con pasos "wait". No inventes enlaces. Máximo 20 pasos en total. Usa condiciones solo cuando aporten (p. ej. insistir solo si no respondió); máximo 3 niveles de condiciones.`;
 
     const { draftFlowWithClaude, FLOW_AI_MODEL } = await import("./flow-ai.server");
     let out;
