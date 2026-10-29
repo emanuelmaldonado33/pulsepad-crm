@@ -72,10 +72,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               className="press h-10 w-[min(54vw,15rem)] rounded-xl border-0 bg-transparent px-1.5 shadow-none hover:bg-accent focus:ring-0 sm:h-11 sm:w-64"
               aria-label="Subcuenta"
             >
-              <div className="flex items-center gap-3 text-left">
+              <div className="flex min-w-0 items-center gap-3 text-left">
                 <BrandMark initials={account.initials} size={32} />
-                <div className="leading-tight">
-                  <div className="font-display text-[13px] font-semibold tracking-tight">
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate font-display text-[13px] font-semibold tracking-tight">
                     {account.name}
                   </div>
                   <div className="hidden text-[11px] text-muted-foreground sm:block">{account.tagline}</div>
