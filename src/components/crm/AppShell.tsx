@@ -9,6 +9,7 @@ import {
   LogOut,
   MessageCircle,
   Plus,
+  MoreHorizontal,
   Settings2,
   Workflow,
 } from "lucide-react";
@@ -16,14 +17,23 @@ import { supabase } from "@/integrations/supabase/client";
 import { useCrm } from "@/lib/crm/store";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
-const NAV = [
+const PRIMARY_NAV = [
   { to: "/", label: "Pipeline", icon: KanbanSquare },
   { to: "/inbox", label: "Bandeja", icon: MessageCircle },
+  { to: "/citas", label: "Agenda", icon: CalendarDays },
+] as const;
+
+const MORE_NAV = [
   { to: "/simulador", label: "Simulador", icon: FlaskConical },
-  { to: "/citas", label: "Citas", icon: CalendarDays },
   { to: "/flujos", label: "Flujos", icon: Workflow },
-  { to: "/configuracion", label: "Configuración IA", icon: Settings2 },
+  { to: "/configuracion", label: "Configuración", icon: Settings2 },
 ] as const;
 
 export function BrandMark({ initials, size = 36 }: { initials: string; size?: number }) {
@@ -56,19 +66,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div style={brandVars} className="flex min-h-screen flex-col">
       <header className="glass sticky top-0 z-30 !border-x-0 !border-t-0">
-        <div className="flex h-16 items-center gap-4 px-4 lg:px-6">
+        <div className="flex h-14 items-center gap-2 px-3 sm:h-16 sm:gap-4 sm:px-4 lg:px-6">
           <Select value={account.id} onValueChange={setAccount}>
             <SelectTrigger
-              className="press h-11 w-64 rounded-xl border-0 bg-transparent px-1.5 shadow-none hover:bg-accent focus:ring-0"
+              className="press h-10 w-[min(54vw,15rem)] rounded-xl border-0 bg-transparent px-1.5 shadow-none hover:bg-accent focus:ring-0 sm:h-11 sm:w-64"
               aria-label="Subcuenta"
             >
-              <div className="flex items-center gap-3 text-left">
-                <BrandMark initials={account.initials} />
-                <div className="leading-tight">
-                  <div className="font-display text-[13px] font-semibold tracking-tight">
+              <div className="flex min-w-0 items-center gap-3 text-left">
+                <BrandMark initials={account.initials} size={32} />
+                <div className="min-w-0 leading-tight">
+                  <div className="truncate font-display text-[13px] font-semibold tracking-tight">
                     {account.name}
                   </div>
-                  <div className="text-[11px] text-muted-foreground">{account.tagline}</div>
+                  <div className="hidden text-[11px] text-muted-foreground sm:block">{account.tagline}</div>
                 </div>
               </div>
             </SelectTrigger>
@@ -97,7 +107,8 @@ export function AppShell({ children }: { children: ReactNode }) {
 
           <nav
             ref={navRef}
-            className="relative ml-2 flex items-center gap-0.5 overflow-x-auto rounded-full bg-muted p-[3px] ring-[0.5px] ring-hairline"
+            aria-label="Navegación principal"
+            className="relative ml-2 hidden items-center gap-0.5 rounded-full bg-muted p-[3px] ring-[0.5px] ring-hairline md:flex"
           >
             {pill && (
               <span
@@ -106,7 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 style={{ left: pill.left, width: pill.width }}
               />
             )}
-            {NAV.map(({ to, label, icon: Icon }) => (
+            {PRIMARY_NAV.map(({ to, label, icon: Icon }) => (
               <Link
                 key={to}
                 to={to}
@@ -115,23 +126,87 @@ export function AppShell({ children }: { children: ReactNode }) {
                 activeProps={{ className: "!text-foreground" }}
               >
                 <Icon className="h-4 w-4 [[data-status=active]_&]:text-primary" />
-                <span className="hidden sm:inline">{label}</span>
+                <span>{label}</span>
               </Link>
             ))}
           </nav>
 
-          <ThemeToggle className="ml-auto" />
+          <div className="hidden md:block">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant={MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "secondary" : "ghost"}
+                  size="sm"
+                  aria-label="Más secciones"
+                >
+                  <MoreHorizontal className="mr-1 h-4 w-4" /> Más
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {MORE_NAV.map(({ to, label, icon: Icon }) => (
+                  <DropdownMenuItem key={to} asChild>
+                    <Link to={to} className="flex items-center gap-2">
+                      <Icon className="h-4 w-4" /> {label}
+                    </Link>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+
+          <ThemeToggle className="ml-auto md:ml-0" />
           <Button
             variant="ghost"
             size="sm"
-            className="text-muted-foreground"
+            className="h-9 w-9 p-0 text-muted-foreground md:w-auto md:px-3"
             onClick={() => supabase.auth.signOut()}
+            aria-label="Salir"
+            title="Salir"
           >
-            <LogOut className="mr-1 h-4 w-4" /> Salir
+            <LogOut className="h-4 w-4 md:mr-1" />
+            <span className="hidden md:inline">Salir</span>
           </Button>
         </div>
       </header>
-      <main className="flex min-h-0 flex-1 flex-col">
+      <nav
+        aria-label="Navegación móvil"
+        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-hairline bg-background/95 px-1 pt-1 pb-[max(env(safe-area-inset-bottom),0.25rem)] shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur md:hidden"
+      >
+        {PRIMARY_NAV.map(({ to, label, icon: Icon }) => (
+          <Link
+            key={to}
+            to={to}
+            activeOptions={{ exact: to === "/" }}
+            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium text-muted-foreground"
+            activeProps={{ className: "!text-primary" }}
+          >
+            <Icon className="h-5 w-5" />
+            <span>{label}</span>
+          </Link>
+        ))}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              aria-label="Más secciones"
+              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium ${MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "text-primary" : "text-muted-foreground"}`}
+            >
+              <MoreHorizontal className="h-5 w-5" />
+              <span>Más</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="top" align="end" className="mb-2 w-56">
+            {MORE_NAV.map(({ to, label, icon: Icon }) => (
+              <DropdownMenuItem key={to} asChild>
+                <Link to={to} className="flex items-center gap-2">
+                  <Icon className="h-4 w-4" /> {label}
+                </Link>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </nav>
+      <main className="flex min-h-0 flex-1 flex-col pb-16 md:pb-0">
         {loading ? (
           <div className="p-8 text-sm text-muted-foreground">Cargando datos…</div>
         ) : (

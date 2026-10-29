@@ -64,7 +64,22 @@ export function parseFlow(
   } else triggerValue = "";
 
   const rawSteps = o["steps"];
-  if (!Array.isArray(rawSteps) || rawSteps.length === 0) throw new Error("El flujo no tiene pasos");
+  if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
+    const definition =
+      typeof o["definition"] === "object" && o["definition"] !== null
+        ? (o["definition"] as Record<string, unknown>)
+        : o;
+    if (
+      Array.isArray(definition["actions"]) &&
+      Array.isArray(definition["edges"]) &&
+      Array.isArray(definition["triggers"])
+    ) {
+      throw new Error(
+        "Este archivo parece una definición de GoHighLevel. Pulse aún no convierte sus disparadores, acciones y ramas automáticamente; crea una versión compatible y revísala antes de activarla.",
+      );
+    }
+    throw new Error("El flujo no tiene pasos compatibles con Pulse");
+  }
   if (rawSteps.length > 50) throw new Error("Máximo 50 pasos por flujo");
   const findMat = (v: unknown) => {
     const s = str(v, 200).trim().toLowerCase();

@@ -13,6 +13,17 @@ export function stageLabel(l: Lead) {
   return `${STAGES[l.stage]!.code} · ${STAGES[l.stage]!.name}`;
 }
 
+function nextStepSuggestion(lead: Lead) {
+  if (lead.stage === 0) return "Inicia el contacto y confirma si mantiene el interés.";
+  if (lead.stage === 1) return "Completa la calificación antes de enviar una propuesta.";
+  if (lead.stage === 2) return "Comparte información relevante para su necesidad.";
+  if (lead.stage === 3) return "Confirma si el material resolvió sus dudas.";
+  if (lead.stage === 4) return "Propón una cita con fecha y hora.";
+  if (lead.stage === 5) return "Prepara la cita y revisa los datos clave.";
+  if (lead.stage === 6) return "Acuerda la próxima acción y fecha de seguimiento.";
+  return lead.outcome === "ganado" ? "Venta cerrada." : "Lead cerrado como no calificado.";
+}
+
 function NumField({
   label,
   value,
@@ -26,7 +37,7 @@ function NumField({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1">
         <Input
           type="number"
@@ -71,6 +82,11 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
           {stageLabel(lead)}
         </div>
       </div>
+
+      <section className="rounded-xl border border-primary/15 bg-primary/[0.035] p-3">
+        <div className="text-xs font-semibold text-primary">Siguiente paso sugerido</div>
+        <p className="mt-1 text-sm leading-relaxed">{nextStepSuggestion(lead)}</p>
+      </section>
 
       <section className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3">
         {readOnly ? (

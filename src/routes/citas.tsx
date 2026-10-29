@@ -11,12 +11,12 @@ import type { Lead } from "@/lib/crm/types";
 export const Route = createFileRoute("/citas")({
   head: () => ({
     meta: [
-      { title: "Citas y agenda — Nexo CRM" },
+      { title: "Citas y agenda — Pulse" },
       {
         name: "description",
         content: "Agenda de citas con resumen previo de la llamada para el asesor.",
       },
-      { property: "og:title", content: "Citas y agenda — Nexo CRM" },
+      { property: "og:title", content: "Citas y agenda — Pulse" },
       {
         property: "og:description",
         content: "Agenda de citas con resumen previo de la llamada para el asesor.",

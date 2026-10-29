@@ -29,13 +29,13 @@ import { Input } from "@/components/ui/input";
 export const Route = createFileRoute("/flujos")({
   head: () => ({
     meta: [
-      { title: "Flujos de seguimiento — Nexo CRM" },
+      { title: "Flujos de seguimiento — Pulse" },
       {
         name: "description",
         content:
           "Automatizaciones de seguimiento paso a paso por subcuenta, con plantillas y biblioteca de materiales.",
       },
-      { property: "og:title", content: "Flujos de seguimiento — Nexo CRM" },
+      { property: "og:title", content: "Flujos de seguimiento — Pulse" },
       {
         property: "og:description",
         content:

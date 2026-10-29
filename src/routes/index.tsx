@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { MessageCircle, Search, Upload } from "lucide-react";
+import { LayoutGrid, List, MessageCircle, Search, Upload } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { LeadFile } from "@/components/crm/LeadFile";
@@ -14,12 +14,12 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Pipeline de ventas — Nexo CRM" },
+      { title: "Pipeline de ventas — Pulse" },
       {
         name: "description",
         content: "Pipeline Kanban P0–P7 con filtros rápidos y valor total por etapa.",
       },
-      { property: "og:title", content: "Pipeline de ventas — Nexo CRM" },
+      { property: "og:title", content: "Pipeline de ventas — Pulse" },
       {
         property: "og:description",
         content: "Pipeline Kanban P0–P7 con filtros rápidos y valor total por etapa.",
@@ -36,6 +36,7 @@ function Pipeline() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("todos");
+  const [view, setView] = useState<"kanban" | "list">("kanban");
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -53,7 +54,7 @@ function Pipeline() {
         if (filter === "bot") return l.botActive;
         if (filter === "humano") return !l.botActive;
         if (filter === "vip") return l.tags.includes("vip");
-        if (filter === "hoy") return l.stage <= 1;
+        if (filter === "hoy") return l.stage === 0;
         return true;
       }),
     [leads, q, filter],
@@ -94,26 +95,49 @@ function Pipeline() {
             Arrastra entre etapas; etiquetas y bot se sincronizan solos.
           </p>
         </div>
-        <div className="ml-auto flex items-end gap-8">
+        <div className="ml-auto flex w-full items-end justify-between gap-3 sm:w-auto sm:gap-8">
           <Stat label="Valor en pipeline" value={money(total)} />
           <Stat label="Ganado" value={money(won)} accent />
           <Stat label="Leads" value={String(filtered.length)} />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 px-4 pb-5 lg:px-8">
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative w-full sm:w-64">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar"
-            className="h-8 rounded-full border-0 bg-muted pl-8 text-[13px] shadow-none"
+            placeholder="Buscar persona, teléfono o etiqueta"
+            aria-label="Buscar leads"
+            className="h-10 rounded-xl border-0 bg-muted pl-9 text-sm shadow-none"
           />
         </div>
         <Segmented value={filter} onChange={setFilter} options={FILTERS} />
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setImportOpen(true)}>
-          <Upload className="mr-2 h-4 w-4" /> Importar CSV
-        </Button>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant={view === "kanban" ? "secondary" : "ghost"}
+            aria-label="Vista Kanban"
+            aria-pressed={view === "kanban"}
+            onClick={() => setView("kanban")}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant={view === "list" ? "secondary" : "ghost"}
+            aria-label="Vista de lista"
+            aria-pressed={view === "list"}
+            onClick={() => setView("list")}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" /> <span className="hidden sm:inline">Importar CSV</span>
+          </Button>
+        </div>
       </div>
       <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} />
       <Sheet open={!!openLead} onOpenChange={(v) => !v && setOpenId(null)}>
@@ -138,7 +162,8 @@ function Pipeline() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-8 lg:px-8">
+      {view === "kanban" ? (
+      <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-8 lg:gap-4 lg:px-8">
         {STAGES.map((s, i) => {
           const zones = i === 7 ? (["7:ganado", "7:no_califica"] as const) : ([`${i}:`] as const);
           const col = filtered.filter((l) => l.stage === i);
@@ -148,14 +173,14 @@ function Pipeline() {
           return (
             <div
               key={s.code}
-              className="flex w-[17rem] shrink-0 flex-col rounded-[18px] bg-foreground/[0.025] ring-[0.5px] ring-hairline"
+              className="flex w-[15rem] shrink-0 flex-col rounded-[18px] bg-foreground/[0.025] ring-[0.5px] ring-hairline lg:w-[17rem]"
             >
               <div className="px-3.5 pb-2 pt-3">
                 <div className="flex items-baseline gap-2">
                   <span className="tabular text-[11px] font-medium text-muted-foreground">
                     {s.code}
                   </span>
-                  <span className="truncate text-[13px] font-semibold">{s.name}</span>
+                  <span className="line-clamp-2 text-[13px] font-semibold leading-tight">{s.name}</span>
                   <span className="tabular ml-auto text-[12px] text-muted-foreground">
                     {col.length}
                   </span>
@@ -232,6 +257,43 @@ function Pipeline() {
           );
         })}
       </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 lg:px-8">
+          <div className="mb-3 text-sm text-muted-foreground">{filtered.length} leads</div>
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+              No hay leads que coincidan. Ajusta los filtros o la búsqueda.
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {filtered.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => setOpenId(l.id)}
+                  aria-label={`Abrir expediente de ${l.name}`}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-accent/50 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto_auto]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">{l.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">{l.phone} · {l.source}</span>
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground sm:text-sm">
+                    {l.stage === 7
+                      ? l.outcome === "ganado" ? "Ganado" : "No califica"
+                      : `${STAGES[l.stage]!.code} · ${STAGES[l.stage]!.name}`}
+                  </span>
+                  <span className="tabular text-right text-sm font-semibold">{money(l.budget)}</span>
+                  <span className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                    <span className={`h-2 w-2 rounded-full ${l.botActive ? "bg-primary" : "bg-warning"}`} />
+                    {l.botActive ? "Bot" : "Asesor"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -239,7 +301,7 @@ function Pipeline() {
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="text-right">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div
         className={`tabular font-display text-[22px] font-semibold leading-tight ${accent ? "text-success" : ""}`}
       >
