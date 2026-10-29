@@ -11,7 +11,8 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 const PUBLIC_ENV = {
   VITE_SUPABASE_URL: process.env["VITE_SUPABASE_URL"] || "https://vspeqoilagcjgwjehjzx.supabase.co",
   VITE_SUPABASE_PUBLISHABLE_KEY:
-    process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] || "sb_publishable_jRUNUftBZvOjOIGDdbc-YQ_6fxFWY9Y",
+    process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] ||
+    "sb_publishable_jRUNUftBZvOjOIGDdbc-YQ_6fxFWY9Y",
   VITE_SUPABASE_PROJECT_ID: process.env["VITE_SUPABASE_PROJECT_ID"] || "vspeqoilagcjgwjehjzx",
 };
 
