@@ -38,6 +38,17 @@ export const qualificationSchema = z.object({
     "no_interesado",
     "seguimiento",
   ]),
+  message_intent: z
+    .enum([
+      "quiere_comprar",
+      "pide_precio",
+      "pide_cita",
+      "objecion",
+      "no_interesado",
+      "quiere_humano",
+      "otro",
+    ])
+    .describe("Intención del ÚLTIMO mensaje del prospecto, sin contar el resto del historial"),
   tags_to_add: z.array(z.string()).describe("Etiquetas en minúsculas-con-guiones"),
   appointment_requested: z.boolean(),
   summary: z.string().describe("Resumen de una línea del estado del lead para el asesor"),

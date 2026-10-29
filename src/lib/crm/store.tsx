@@ -274,6 +274,8 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           active: f.active,
           trigger_type: f.triggerType,
           trigger_value: f.triggerValue,
+          trigger_config: f.triggerConfig as unknown as Json,
+          allow_reentry: f.allowReentry,
           steps: f.steps as unknown as Json,
           stop_on_reply: f.stopOnReply,
         };

@@ -323,4 +323,124 @@ SELECT test_helpers.affects('member ve el cursor de su cuenta',
   $$SELECT current_node FROM public.flow_enrollments WHERE id = 'E-rama'$$, 1);
 RESET ROLE;
 
+-- ===== Disparadores de conversación (0012) =====
+SET ROLE service_role;
+INSERT INTO public.leads (id, account_id, name, stage, tags) VALUES
+  ('t-lead', 'espacio-fx', 'Conversa', 2, '{calificando}'),
+  ('t-otro', 'espacio-fx', 'Otra etapa', 4, '{}');
+INSERT INTO public.flows (id, account_id, name, active, trigger_type, trigger_config, allow_reentry, stop_on_reply, created_at) VALUES
+  ('T-resp', 'espacio-fx', 'responde', true, 'reply', '{}', true, true, now() - interval '3 min'),
+  ('T-resp-p2', 'espacio-fx', 'responde en P2', true, 'reply', '{"stage": 2}', false, false, now() - interval '2 min'),
+  ('T-clave', 'espacio-fx', 'precio', true, 'keyword', '{"keywords": ["cuanto cuesta", "no"]}', false, false, now() - interval '1 min'),
+  ('T-ia', 'espacio-fx', 'pide precio', true, 'intent', '{"intents": ["pide_precio"]}', false, false, now()),
+  ('T-ajeno', 'mia', 'ajeno', true, 'reply', '{}', true, false, now()),
+  ('T-roto', 'espacio-fx', 'config rota', true, 'keyword', '{"keywords": 5, "stage": "x"}', true, false, now()),
+  ('T-inactivo', 'espacio-fx', 'apagado', false, 'reply', '{}', true, false, now());
+
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('t-lead', 'asesor', '¿Cuánto cuesta? te digo');
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('t-lead', 'bot', 'hola');
+SELECT test_helpers.eq('asesor y bot no disparan flujos de conversación',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 't-lead'), 0::bigint);
+
+INSERT INTO public.messages (id, lead_id, sender, body, ai_status) VALUES
+  ('00000000-0000-0000-0000-0000000000a1', 't-lead', 'lead', '¿CUÁNTO cuesta la noche?', 'pending');
+SELECT test_helpers.eq('el lead responde: inscribe con motivo',
+  (SELECT trigger_reason FROM public.flow_enrollments WHERE flow_id = 'T-resp' AND lead_id = 't-lead'),
+  'Respondió: «¿CUÁNTO cuesta la noche?»'::text);
+SELECT test_helpers.eq('filtro de etapa que sí cumple',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-resp-p2' AND lead_id = 't-lead'), 1::bigint);
+SELECT test_helpers.eq('palabra clave sin acentos ni mayúsculas',
+  (SELECT trigger_reason FROM public.flow_enrollments WHERE flow_id = 'T-clave'), 'Escribió «cuanto cuesta»'::text);
+SELECT test_helpers.eq('la intención espera a la IA',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-ia'), 0::bigint);
+SELECT test_helpers.eq('un flujo de otra cuenta nunca inscribe al lead',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-ajeno'), 0::bigint);
+SELECT test_helpers.eq('un flujo inactivo no inscribe',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-inactivo'), 0::bigint);
+SELECT test_helpers.eq('una configuración rota no inscribe ni bloquea el mensaje',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-roto'), 0::bigint);
+SELECT test_helpers.eq('varios flujos se ejecutan en orden de creación',
+  (SELECT array_agg(flow_id ORDER BY next_run_at) FROM public.flow_enrollments WHERE lead_id = 't-lead'),
+  ARRAY['T-resp', 'T-resp-p2', 'T-clave']::text[]);
+SELECT test_helpers.eq('la inscripción nueva no cuenta el mensaje que la disparó',
+  (SELECT replied FROM public.flow_enrollments WHERE flow_id = 'T-resp-p2'), false);
+
+-- "no" es palabra completa: no coincide con "noche" ni con "nota".
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('t-otro', 'lead', 'una nota de noche');
+SELECT test_helpers.eq('palabra clave sólo como palabra completa',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-clave' AND lead_id = 't-otro'), 0::bigint);
+SELECT test_helpers.eq('filtro de etapa que no cumple',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-resp-p2' AND lead_id = 't-otro'), 0::bigint);
+
+-- La IA clasifica el mensaje.
+UPDATE public.messages SET ai_intent = 'objecion' WHERE id = '00000000-0000-0000-0000-0000000000a1';
+SELECT test_helpers.eq('otra intención no inscribe',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-ia'), 0::bigint);
+UPDATE public.messages SET ai_intent = 'pide_precio' WHERE id = '00000000-0000-0000-0000-0000000000a1';
+SELECT test_helpers.eq('la IA detecta la intención y lo inscribe',
+  (SELECT trigger_reason FROM public.flow_enrollments WHERE flow_id = 'T-ia'),
+  'La IA detectó que pide precio o cotización'::text);
+SELECT test_helpers.denied('intención desconocida',
+  $$UPDATE public.messages SET ai_intent = 'hackear' WHERE id = '00000000-0000-0000-0000-0000000000a1'$$);
+
+-- Anti-spam: el mensaje cancela la inscripción anterior y crea una nueva (reingreso sí).
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('t-lead', 'lead', 'otra vez');
+SELECT test_helpers.eq('anti-spam cancela la anterior',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-resp' AND lead_id = 't-lead' AND status = 'cancelled'), 1::bigint);
+SELECT test_helpers.eq('y el mismo mensaje inscribe de nuevo',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-resp' AND lead_id = 't-lead' AND status = 'active'), 1::bigint);
+SELECT test_helpers.eq('nunca dos inscripciones activas',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-resp-p2' AND lead_id = 't-lead'), 1::bigint);
+-- Sin reingreso: aunque termine, no vuelve a entrar.
+UPDATE public.flow_enrollments SET status = 'completed' WHERE flow_id = 'T-resp-p2';
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('t-lead', 'lead', 'y otra');
+SELECT test_helpers.eq('sin reingreso no vuelve a entrar',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-resp-p2'), 1::bigint);
+
+-- Lead nuevo de anuncio y cambio de calificación de IA.
+INSERT INTO public.flows (id, account_id, name, active, trigger_type, trigger_value) VALUES
+  ('T-anuncio', 'espacio-fx', 'anuncio', true, 'ad_lead', 'Preventa'),
+  ('T-calif', 'espacio-fx', 'listo', true, 'qualification', 'listo_para_cita');
+INSERT INTO public.leads (id, account_id, name, ad_id, ad_name) VALUES
+  ('t-ad', 'espacio-fx', 'Anuncio', '120000', 'Preventa Octubre'),
+  ('t-ad-otro', 'espacio-fx', 'Otro anuncio', '120001', 'Terrenos');
+INSERT INTO public.leads (id, account_id, name) VALUES ('t-organico', 'espacio-fx', 'Orgánico');
+SELECT test_helpers.eq('lead de anuncio con nombre que coincide',
+  (SELECT trigger_reason FROM public.flow_enrollments WHERE flow_id = 'T-anuncio'),
+  'Llegó del anuncio «Preventa Octubre»'::text);
+SELECT test_helpers.eq('sólo leads del anuncio indicado',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-anuncio'), 1::bigint);
+UPDATE public.leads SET intent = 'calificando' WHERE id = 't-organico';
+SELECT test_helpers.eq('otra calificación no inscribe',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-calif'), 0::bigint);
+UPDATE public.leads SET intent = 'listo_para_cita' WHERE id = 't-organico';
+SELECT test_helpers.eq('cambio de calificación de IA inscribe',
+  (SELECT count(*) FROM public.flow_enrollments WHERE flow_id = 'T-calif'), 1::bigint);
+SELECT test_helpers.denied('tipo de disparador desconocido',
+  $$INSERT INTO public.flows (account_id, name, trigger_type) VALUES ('espacio-fx', 'x', 'magia')$$);
+SELECT test_helpers.denied('trigger_config debe ser objeto',
+  $$INSERT INTO public.flows (account_id, name, trigger_config) VALUES ('espacio-fx', 'x', '[]')$$);
+RESET ROLE;
+
+-- Sólo el servidor clasifica mensajes y sólo los disparadores inscriben.
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.denied('member no fija la intención de un mensaje',
+  $$UPDATE public.messages SET ai_intent = 'pide_precio' WHERE lead_id = 't-lead'$$);
+SELECT test_helpers.denied('member no llama a flow_try_enroll',
+  $$SELECT public.flow_try_enroll('T-resp', 't-lead', 'espacio-fx', true, 'x')$$);
+SELECT test_helpers.affects('member ve el motivo en su cuenta',
+  $$SELECT trigger_reason FROM public.flow_enrollments WHERE lead_id = 't-lead'$$, 6);
+RESET ROLE;
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.eq('intruso no ve inscripciones ni motivos ajenos',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 't-lead'), 0::bigint);
+-- Su propio flujo de "responde" no puede inscribir leads de otra cuenta aunque escriba en ella.
+SELECT test_helpers.denied('intruso escribe como lead en lead ajeno',
+  $$INSERT INTO public.messages (lead_id, sender, body) VALUES ('t-lead', 'lead', 'hola')$$);
+SELECT test_helpers.no_rows('intruso cambia la calificación de un lead ajeno',
+  $$UPDATE public.leads SET intent = 'listo_para_cita' WHERE id = 't-lead' RETURNING id$$);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'

@@ -1,6 +1,11 @@
 import {
+  CONVERSATION_TRIGGERS,
   FIELD_LABEL,
+  LEAD_INTENTS,
+  MESSAGE_INTENTS,
   sid,
+  type MessageIntent,
+  type TriggerConfig,
   type ConditionRule,
   type Flow,
   type FlowStep,
@@ -26,7 +31,8 @@ export function exportFlow(f: Flow, materialName: (id: string | null) => string 
     format: "nexo-crm-flow",
     version: FLOW_FILE_VERSION,
     name: f.name,
-    trigger: { type: f.triggerType, value: f.triggerValue },
+    trigger: { type: f.triggerType, value: f.triggerValue, config: f.triggerConfig },
+    allowReentry: f.allowReentry,
     stopOnReply: f.stopOnReply,
     steps: out(f.steps),
   };
@@ -50,6 +56,44 @@ const stageOf = (v: unknown) => {
   return Number.isInteger(n) && n >= 0 && n <= 7 ? String(n) : null;
 };
 
+const TRIGGER_TYPES: TriggerType[] = [
+  "new_lead",
+  "stage",
+  "tag",
+  "reply",
+  "keyword",
+  "intent",
+  "ad_lead",
+  "qualification",
+];
+
+/** Sólo guarda las opciones que usa cada disparador, ya limpias. */
+export function parseTriggerConfig(type: TriggerType, raw: unknown): TriggerConfig {
+  const c = (typeof raw === "object" && raw !== null && !Array.isArray(raw) ? raw : {}) as Record<
+    string,
+    unknown
+  >;
+  const out: TriggerConfig = {};
+  if (!CONVERSATION_TRIGGERS.includes(type)) return out;
+  if (type === "keyword") {
+    const list = Array.isArray(c["keywords"]) ? c["keywords"] : [];
+    out.keywords = [...new Set(list.map((k) => str(k, 60).trim()).filter(Boolean))].slice(0, 30);
+    if (!out.keywords.length) throw new Error("El disparador de palabras clave no tiene palabras");
+  }
+  if (type === "intent") {
+    const list = Array.isArray(c["intents"]) ? c["intents"] : [];
+    out.intents = [...new Set(list.map((i) => str(i, 30)))].filter(
+      (i): i is MessageIntent => i in MESSAGE_INTENTS,
+    );
+    if (!out.intents.length) throw new Error("El disparador de intención no tiene intenciones");
+  }
+  const stage = c["stage"] == null || c["stage"] === "" ? null : stageOf(c["stage"]);
+  if (stage != null) out.stage = Number(stage);
+  const tag = tagify(c["tag"]);
+  if (tag) out.tag = tag;
+  return out;
+}
+
 /**
  * Valida y normaliza un flujo desde JSON (archivo importado, código pegado o salida de la IA).
  * Lanza Error con mensaje en español si no es utilizable.
@@ -66,8 +110,10 @@ export function parseFlow(
   if (!o) throw new Error("El contenido no es un objeto JSON de flujo");
   const trig = (o["trigger"] ?? {}) as Record<string, unknown>;
   const rawType = str(trig["type"] ?? o["triggerType"] ?? o["trigger_type"], 20);
-  const triggerType: TriggerType = rawType === "stage" || rawType === "tag" ? rawType : "new_lead";
-  let triggerValue = str(trig["value"] ?? o["triggerValue"] ?? o["trigger_value"], 40);
+  const triggerType: TriggerType = TRIGGER_TYPES.includes(rawType as TriggerType)
+    ? (rawType as TriggerType)
+    : "new_lead";
+  let triggerValue = str(trig["value"] ?? o["triggerValue"] ?? o["trigger_value"], 120);
   if (triggerType === "stage") {
     const s = stageOf(triggerValue);
     if (s == null) throw new Error("El disparador de etapa debe ser P0–P7");
@@ -75,7 +121,17 @@ export function parseFlow(
   } else if (triggerType === "tag") {
     triggerValue = tagify(triggerValue);
     if (!triggerValue) throw new Error("El disparador de etiqueta no tiene etiqueta");
+  } else if (triggerType === "ad_lead") {
+    triggerValue = triggerValue.trim();
+  } else if (triggerType === "qualification") {
+    triggerValue = triggerValue.trim();
+    if (triggerValue && !(triggerValue in LEAD_INTENTS))
+      throw new Error(`La calificación «${triggerValue}» no existe`);
   } else triggerValue = "";
+  const triggerConfig = parseTriggerConfig(
+    triggerType,
+    (trig["config"] ?? o["triggerConfig"] ?? o["trigger_config"] ?? {}) as Record<string, unknown>,
+  );
 
   const rawSteps = o["steps"];
   if (!Array.isArray(rawSteps) || rawSteps.length === 0) throw new Error("El flujo no tiene pasos");
@@ -169,6 +225,8 @@ export function parseFlow(
     active: false,
     triggerType,
     triggerValue,
+    triggerConfig,
+    allowReentry: o["allowReentry"] !== false && o["allow_reentry"] !== false,
     steps,
     stopOnReply: o["stopOnReply"] !== false && o["stop_on_reply"] !== false,
   };

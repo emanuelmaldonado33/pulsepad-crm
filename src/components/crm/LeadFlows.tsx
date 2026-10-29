@@ -35,7 +35,7 @@ export function LeadFlows({ leadId, testMode }: { leadId: string; testMode?: boo
         <p className="text-xs text-muted-foreground">
           Ninguno
           {last
-            ? ` · último: «${flows.find((f) => f.id === last.flowId)?.name ?? "flujo"}» ${last.status === "completed" ? "completado" : `cancelado (${last.cancelReason ?? ""})`}`
+            ? ` · último: «${flows.find((f) => f.id === last.flowId)?.name ?? "flujo"}»${last.triggerReason ? ` (${last.triggerReason})` : ""} ${last.status === "completed" ? "completado" : `cancelado (${last.cancelReason ?? ""})`}`
             : ""}
         </p>
       )}
@@ -47,6 +47,9 @@ export function LeadFlows({ leadId, testMode }: { leadId: string; testMode?: boo
         return (
           <div key={e.id} className="mb-2 rounded-lg bg-primary/5 p-2 text-xs">
             <div className="font-semibold text-primary">{f?.name ?? "Flujo"}</div>
+            {e.triggerReason && (
+              <div className="text-muted-foreground">Se activó porque: {e.triggerReason}</div>
+            )}
             <div className="text-muted-foreground">
               {e.currentStep} {e.currentStep === 1 ? "paso hecho" : "pasos hechos"}
               {upcoming && ` · sigue: ${stepLabel(upcoming)}`} ·{" "}

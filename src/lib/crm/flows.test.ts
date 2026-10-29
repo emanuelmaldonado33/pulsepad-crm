@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
+import { exportFlow, parseFlow } from "./flow-io";
 import {
   END_NODE,
+  FLOW_TEMPLATES,
+  matchKeyword,
+  normalizeText,
+  triggerLabel,
+  triggerProblem,
   allSteps,
   branchStart,
   evaluateCondition,
@@ -30,6 +36,8 @@ const flow = (p: Partial<Flow>): Flow => ({
   active: true,
   triggerType: "new_lead",
   triggerValue: "",
+  triggerConfig: {},
+  allowReentry: true,
   steps: [],
   stopOnReply: true,
   ...p,
@@ -103,5 +111,60 @@ describe("ramas sí/no", () => {
     ).toBe(false);
     expect(evaluateCondition({ kind: "replied" }, ctx)).toBe(false);
     expect(evaluateCondition({ kind: "appointment" }, ctx)).toBe(true);
+  });
+});
+
+describe("disparadores de conversación", () => {
+  it("normaliza como flow_norm() de la base", () => {
+    expect(normalizeText("¿CUÁNTO   cuesta?")).toBe("cuanto cuesta");
+    expect(normalizeText("Ñandú, señor")).toBe("nandu senor");
+  });
+  it("palabras clave como palabra o frase completa", () => {
+    expect(matchKeyword(["cuanto cuesta"], "Hola, ¿cuánto cuesta?")).toBe("cuanto cuesta");
+    expect(matchKeyword(["no"], "una nota de noche")).toBeNull();
+    expect(matchKeyword(["no"], "No, gracias")).toBe("no");
+    expect(matchKeyword(["", " "], "hola")).toBeNull();
+  });
+  it("describe el disparador en español", () => {
+    const stageName = (n: number) => `P${n}`;
+    expect(
+      triggerLabel(
+        {
+          triggerType: "keyword",
+          triggerValue: "",
+          triggerConfig: { keywords: ["precio"], stage: 2 },
+        },
+        stageName,
+      ),
+    ).toBe("El mensaje contiene «precio» (solo leads en P2)");
+    expect(
+      triggerLabel(
+        { triggerType: "intent", triggerValue: "", triggerConfig: { intents: ["pide_cita"] } },
+        stageName,
+      ),
+    ).toBe("La IA detecta: pide una cita");
+  });
+  it("avisa cuando al disparador le falta algo", () => {
+    expect(
+      triggerProblem(flow({ triggerType: "keyword", triggerConfig: { keywords: [" "] } })),
+    ).toMatch(/palabra/);
+    expect(triggerProblem(flow({ triggerType: "intent" }))).toMatch(/intención/);
+    expect(triggerProblem(flow({ triggerType: "reply" }))).toBeNull();
+  });
+  it("las plantillas nuevas son válidas al exportar e importar", () => {
+    for (const key of ["pidio-cotizacion", "no-me-interesa"]) {
+      const t = FLOW_TEMPLATES.find((x) => x.key === key)!;
+      const f = flow({
+        triggerType: t.triggerType,
+        triggerValue: t.triggerValue,
+        triggerConfig: t.triggerConfig ?? {},
+        allowReentry: t.allowReentry ?? true,
+        steps: t.steps([]),
+      });
+      expect(triggerProblem(f)).toBeNull();
+      expect(f.allowReentry).toBe(false);
+      const back = parseFlow(JSON.parse(JSON.stringify(exportFlow(f, () => null))), "a", []);
+      expect(back.triggerConfig).toEqual(f.triggerConfig);
+    }
   });
 });

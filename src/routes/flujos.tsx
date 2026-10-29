@@ -88,6 +88,8 @@ function Flows() {
     active: false,
     triggerType: "new_lead",
     triggerValue: "",
+    triggerConfig: {},
+    allowReentry: true,
     steps: [],
     stopOnReply: true,
   });
@@ -207,6 +209,8 @@ function Flows() {
                       name: `${t.name} (${account.name})`,
                       triggerType: t.triggerType,
                       triggerValue: t.triggerValue,
+                      triggerConfig: t.triggerConfig ?? {},
+                      allowReentry: t.allowReentry ?? true,
                       steps: t.steps(materials),
                       stopOnReply: t.stopOnReply ?? true,
                       active: true,

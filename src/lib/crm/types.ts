@@ -6,6 +6,8 @@ export interface Message {
   text: string;
   at: string; // ISO
   waStatus?: string | null;
+  /** Intención detectada por la IA en un mensaje del lead (ver MESSAGE_INTENTS). */
+  intent?: string | null;
 }
 
 export interface Account {
