@@ -14,12 +14,12 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Pipeline de ventas — Nexo CRM" },
+      { title: "Pipeline de ventas — PulsePad" },
       {
         name: "description",
         content: "Pipeline Kanban P0–P7 con filtros rápidos y valor total por etapa.",
       },
-      { property: "og:title", content: "Pipeline de ventas — Nexo CRM" },
+      { property: "og:title", content: "Pipeline de ventas — PulsePad" },
       {
         property: "og:description",
         content: "Pipeline Kanban P0–P7 con filtros rápidos y valor total por etapa.",
