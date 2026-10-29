@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { Eye, EyeOff, Sun } from "lucide-react";
+import { Activity, Eye, EyeOff } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
@@ -100,7 +100,7 @@ function AuthScreen() {
       <div className="w-full max-w-sm rounded-2xl border bg-card p-6 shadow-sm sm:p-7">
         <div className="mb-6">
           <div className="mb-4 inline-flex h-10 w-10 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-soft">
-            <Sun className="h-5 w-5" aria-hidden="true" />
+            <Activity className="h-5 w-5" aria-hidden="true" />
           </div>
           <h1 className="text-2xl font-semibold">Pulse</h1>
           <p className="mt-1 text-sm text-muted-foreground">
