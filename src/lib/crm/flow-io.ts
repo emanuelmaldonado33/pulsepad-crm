@@ -65,7 +65,15 @@ export function parseFlow(
 
   const rawSteps = o["steps"];
   if (!Array.isArray(rawSteps) || rawSteps.length === 0) {
-    if (Array.isArray(o["actions"]) && Array.isArray(o["edges"]) && Array.isArray(o["triggers"])) {
+    const definition =
+      typeof o["definition"] === "object" && o["definition"] !== null
+        ? (o["definition"] as Record<string, unknown>)
+        : o;
+    if (
+      Array.isArray(definition["actions"]) &&
+      Array.isArray(definition["edges"]) &&
+      Array.isArray(definition["triggers"])
+    ) {
       throw new Error(
         "Este archivo parece una definición de GoHighLevel. Pulse aún no convierte sus disparadores, acciones y ramas automáticamente; crea una versión compatible y revísala antes de activarla.",
       );
