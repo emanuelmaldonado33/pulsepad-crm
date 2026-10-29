@@ -301,7 +301,7 @@ function Pipeline() {
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="text-right">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div
         className={`tabular font-display text-[22px] font-semibold leading-tight ${accent ? "text-success" : ""}`}
       >
