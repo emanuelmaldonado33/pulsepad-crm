@@ -20,7 +20,9 @@ trap cleanup EXIT
 migrate() {
   local target="$1"
   for file in "$root"/drizzle/migrations/[0-9][0-9][0-9][0-9]_*.sql; do
-    psql "${psql_opts[@]}" --single-transaction -d "$target" -f "$file" >/dev/null
+    if ! psql "${psql_opts[@]}" --single-transaction -d "$target" -f "$file" >/dev/null; then
+      return 1
+    fi
   done
 }
 
