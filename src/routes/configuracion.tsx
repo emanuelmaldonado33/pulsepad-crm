@@ -21,13 +21,13 @@ import { WhatsAppChannel } from "@/components/crm/WhatsAppChannel";
 export const Route = createFileRoute("/configuracion")({
   head: () => ({
     meta: [
-      { title: "Configuración de IA — PulsePad" },
+      { title: "Configuración de IA — Pulse" },
       {
         name: "description",
         content:
           "Edita el prompt del setter, las reglas de calificación y revisa el consumo de tokens por subcuenta.",
       },
-      { property: "og:title", content: "Configuración de IA — PulsePad" },
+      { property: "og:title", content: "Configuración de IA — Pulse" },
       {
         property: "og:description",
         content:
