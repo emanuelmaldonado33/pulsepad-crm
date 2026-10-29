@@ -19,13 +19,13 @@ export const Route = createFileRoute("/inbox")({
   }),
   head: () => ({
     meta: [
-      { title: "Bandeja WhatsApp — Nexo CRM" },
+      { title: "Bandeja WhatsApp — PulsePad" },
       {
         name: "description",
         content:
           "Bandeja híbrida estilo WhatsApp con control manual del bot de IA y expediente del lead.",
       },
-      { property: "og:title", content: "Bandeja WhatsApp — Nexo CRM" },
+      { property: "og:title", content: "Bandeja WhatsApp — PulsePad" },
       {
         property: "og:description",
         content:
