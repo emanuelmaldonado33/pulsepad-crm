@@ -90,7 +90,7 @@
   --secondary: oklch(0.21 0.006 270 / 0.06);
   --secondary-foreground: oklch(0.25 0.006 270);
   --muted: oklch(0.21 0.006 270 / 0.05);
-  --muted-foreground: oklch(0.52 0.008 270);
+  --muted-foreground: oklch(0.48 0.008 270);
   --accent: oklch(0.21 0.006 270 / 0.06);
   --accent-foreground: oklch(0.21 0.006 270);
   --destructive: oklch(0.62 0.22 25);
@@ -262,7 +262,8 @@
     scrollbar-color: var(--input) transparent;
   }
   :focus-visible {
-    outline: none;
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
   }
   @media (prefers-reduced-motion: reduce) {
     *,
