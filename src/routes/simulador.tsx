@@ -15,13 +15,13 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/simulador")({
   head: () => ({
     meta: [
-      { title: "Simulador de WhatsApp — PulsePad" },
+      { title: "Simulador de WhatsApp — Pulse" },
       {
         name: "description",
         content:
           "Prueba la conversación del bot de IA en tiempo real y observa extracción de datos, etiquetas y etapas.",
       },
-      { property: "og:title", content: "Simulador de WhatsApp — PulsePad" },
+      { property: "og:title", content: "Simulador de WhatsApp — Pulse" },
       {
         property: "og:description",
         content:
