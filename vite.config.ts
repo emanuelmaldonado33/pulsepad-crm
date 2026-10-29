@@ -9,10 +9,10 @@ import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 // Public (publishable) backend values. Fallback for published builds, where .env is
 // excluded by .gitignore. Safe to ship: these are browser-visible keys.
 const PUBLIC_ENV = {
-  VITE_SUPABASE_URL: process.env.VITE_SUPABASE_URL || "https://vspeqoilagcjgwjehjzx.supabase.co",
+  VITE_SUPABASE_URL: process.env["VITE_SUPABASE_URL"] || "https://vspeqoilagcjgwjehjzx.supabase.co",
   VITE_SUPABASE_PUBLISHABLE_KEY:
-    process.env.VITE_SUPABASE_PUBLISHABLE_KEY || "sb_publishable_jRUNUftBZvOjOIGDdbc-YQ_6fxFWY9Y",
-  VITE_SUPABASE_PROJECT_ID: process.env.VITE_SUPABASE_PROJECT_ID || "vspeqoilagcjgwjehjzx",
+    process.env["VITE_SUPABASE_PUBLISHABLE_KEY"] || "sb_publishable_jRUNUftBZvOjOIGDdbc-YQ_6fxFWY9Y",
+  VITE_SUPABASE_PROJECT_ID: process.env["VITE_SUPABASE_PROJECT_ID"] || "vspeqoilagcjgwjehjzx",
 };
 
 export default defineConfig({
