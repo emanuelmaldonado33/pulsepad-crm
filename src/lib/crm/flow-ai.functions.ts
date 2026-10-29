@@ -38,7 +38,9 @@ Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
     { "type": "message", "text": string, "material": string | null },   // material = nombre EXACTO de la biblioteca o null
     { "type": "wait", "amount": number, "unit": "min" | "hour" | "day" },
     { "type": "wait_appt", "amount": number, "unit": "min" | "hour" | "day" },   // espera hasta X antes de la próxima cita
-    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage", "value": string },
+    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off", "value": string },   // bot_on/bot_off: value ""
+    { "type": "assign", "mode": "round_robin", "userIds": [] },   // asigna un asesor por turnos entre todo el equipo disponible
+    { "type": "notify", "to": ["assigned" | "admins"], "text": string, "whatsapp": boolean },   // aviso interno al equipo con resumen de la IA y enlace al chat
     { "type": "condition", "rule": Regla, "yes": [pasos], "no": [pasos] },   // rama sí/no; al terminar la rama sigue el paso de abajo
     { "type": "end" }   // termina el flujo para ese lead
   ]
@@ -60,6 +62,7 @@ Regla = { "kind": "replied" }   // respondió desde que entró al flujo (requier
       | { "kind": "tag", "tag": string }
       | { "kind": "stage", "op": "eq" | "gte", "stage": "0".."7" }
       | { "kind": "field", "field": "budget" | "downPayment" | "termMonths", "op": "set" | "gte" | "lte", "value": number }
+      | { "kind": "advisor_replied" }   // un asesor le escribió desde que entró al flujo (para escalar tras una espera; requiere "stopOnReply": false)
       | { "kind": "appointment" }   // tiene cita programada
 
 Etapas: ${STAGES.map((s, i) => `${i}=${s.code} ${s.name}`).join("; ")}.

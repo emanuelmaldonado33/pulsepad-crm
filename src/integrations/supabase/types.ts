@@ -17,21 +17,33 @@ export type Database = {
       account_memberships: {
         Row: {
           account_id: string
+          available: boolean
           created_at: string
+          display_name: string
+          last_assigned_at: string | null
           role: string
           user_id: string
+          whatsapp_phone: string
         }
         Insert: {
           account_id: string
+          available?: boolean
           created_at?: string
+          display_name?: string
+          last_assigned_at?: string | null
           role?: string
           user_id: string
+          whatsapp_phone?: string
         }
         Update: {
           account_id?: string
+          available?: boolean
           created_at?: string
+          display_name?: string
+          last_assigned_at?: string | null
           role?: string
           user_id?: string
+          whatsapp_phone?: string
         }
         Relationships: [
           {
@@ -46,6 +58,7 @@ export type Database = {
       accounts: {
         Row: {
           ai_model: string
+          auto_pause_bot: boolean
           brand: string
           brand_foreground: string
           created_at: string
@@ -63,6 +76,7 @@ export type Database = {
         }
         Insert: {
           ai_model?: string
+          auto_pause_bot?: boolean
           brand: string
           brand_foreground: string
           created_at?: string
@@ -80,6 +94,7 @@ export type Database = {
         }
         Update: {
           ai_model?: string
+          auto_pause_bot?: boolean
           brand?: string
           brand_foreground?: string
           created_at?: string
@@ -193,6 +208,7 @@ export type Database = {
       flow_enrollments: {
         Row: {
           account_id: string
+          advisor_replied: boolean
           cancel_reason: string | null
           created_at: string
           current_node: string | null
@@ -208,6 +224,7 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          advisor_replied?: boolean
           cancel_reason?: string | null
           created_at?: string
           current_node?: string | null
@@ -223,6 +240,7 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          advisor_replied?: boolean
           cancel_reason?: string | null
           created_at?: string
           current_node?: string | null
@@ -310,11 +328,55 @@ export type Database = {
           },
         ]
       }
+      lead_events: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          id: string
+          kind: string
+          lead_id: string
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          id?: string
+          kind: string
+          lead_id: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           account_id: string
           ad_id: string | null
           ad_name: string | null
+          ai_summary: string | null
+          assigned_to: string | null
           bot_active: boolean
           budget: number | null
           created_at: string
@@ -335,6 +397,8 @@ export type Database = {
           account_id: string
           ad_id?: string | null
           ad_name?: string | null
+          ai_summary?: string | null
+          assigned_to?: string | null
           bot_active?: boolean
           budget?: number | null
           created_at?: string
@@ -355,6 +419,8 @@ export type Database = {
           account_id?: string
           ad_id?: string | null
           ad_name?: string | null
+          ai_summary?: string | null
+          assigned_to?: string | null
           bot_active?: boolean
           budget?: number | null
           created_at?: string
@@ -475,6 +541,57 @@ export type Database = {
           },
         ]
       }
+      notifications: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          id: string
+          lead_id: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+          wa_status: string | null
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          id?: string
+          lead_id?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+          wa_status?: string | null
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+          lead_id?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
+          wa_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       whatsapp_channels: {
         Row: {
           access_token: string
@@ -527,6 +644,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      assign_lead: {
+        Args: { p_lead_id: string; p_round_robin: boolean; p_user_ids: string[] }
+        Returns: string | null
+      }
       claim_inbound_message: {
         Args: {
           p_expire_after?: string

@@ -175,3 +175,36 @@ describe("disparadores de conversación en JSON", () => {
     ).toThrow();
   });
 });
+
+describe("pasos de entrega al asesor en JSON", () => {
+  const U = "00000000-0000-0000-0000-000000000002";
+  it("valida avisos, asignación, bot y la condición del asesor", () => {
+    const f = parseFlow(
+      {
+        stopOnReply: false,
+        steps: [
+          { type: "assign", mode: "round_robin", userIds: [U, "no-es-uuid"] },
+          { type: "notify", to: ["assigned", "admins", "hack"], text: " Atiende ", whatsapp: true },
+          { type: "action", action: "bot_off", value: "x" },
+          { type: "condition", rule: { kind: "advisor_replied" }, yes: [], no: [] },
+        ],
+      },
+      "a",
+      [],
+    );
+    expect(f.steps[0]).toMatchObject({ type: "assign", mode: "round_robin", userIds: [U] });
+    expect(f.steps[1]).toMatchObject({
+      to: ["assigned", "admins"],
+      text: "Atiende",
+      whatsapp: true,
+    });
+    expect(f.steps[2]).toMatchObject({ action: "bot_off", value: "" });
+    expect(f.steps[3]).toMatchObject({ rule: { kind: "advisor_replied" } });
+  });
+  it("rechaza avisos vacíos y asignación fija sin persona", () => {
+    expect(() => parseFlow({ steps: [{ type: "notify", text: "" }] }, "a", [])).toThrow(/vacío/);
+    expect(() => parseFlow({ steps: [{ type: "assign", mode: "fixed" }] }, "a", [])).toThrow(
+      /a quién/,
+    );
+  });
+});

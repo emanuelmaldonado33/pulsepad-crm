@@ -183,7 +183,11 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
     booked = true;
   }
 
-  const { error: ue } = await sb.from("leads").update(leadPatch(lead)).eq("id", lead.id);
+  // El resumen queda en el lead para los avisos al equipo (paso «Avisar al equipo»).
+  const { error: ue } = await sb
+    .from("leads")
+    .update({ ...leadPatch(lead), ...(o.summary?.trim() ? { ai_summary: o.summary.trim() } : {}) })
+    .eq("id", lead.id);
   if (ue) throw new Error("No se pudo actualizar el lead");
   // Guardar la intención en el mensaje inscribe los flujos «La IA detecta intención» (0012).
   if (leadMessageId && o.message_intent) {

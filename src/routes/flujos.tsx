@@ -61,6 +61,7 @@ function Flows() {
     addMaterial,
     deleteMaterial,
     uploadMaterial,
+    members,
   } = useCrm();
   const [editing, setEditing] = useState<{ flow: Flow; isNew: boolean } | null>(null);
   const [dialog, setDialog] = useState<"ai" | "import" | null>(null);
@@ -263,6 +264,7 @@ function Flows() {
         <FlowEditor
           flow={editing.flow}
           materials={materials}
+          members={members}
           onClose={() => setEditing(null)}
           onSave={(f) => saveFlow(f, editing.isNew)}
         />

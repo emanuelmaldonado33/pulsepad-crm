@@ -1,6 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { Enrollment, Flow } from "./flows";
-import type { Account, Appointment, Lead, Message } from "./types";
+import type { Account, Appointment, Lead, Member, Message } from "./types";
 
 type T = Database["public"]["Tables"];
 export type AccountRow = T["accounts"]["Row"];
@@ -22,6 +22,16 @@ export const toAccount = (r: AccountRow): Account => ({
   aiModel: r.ai_model,
   template: r.template,
   standardTags: r.standard_tags ?? [],
+  autoPauseBot: r.auto_pause_bot ?? true,
+});
+
+export const toMember = (r: T["account_memberships"]["Row"]): Member => ({
+  accountId: r.account_id,
+  userId: r.user_id,
+  role: r.role as Member["role"],
+  name: r.display_name || "Sin nombre",
+  whatsappPhone: r.whatsapp_phone ?? "",
+  available: r.available ?? true,
 });
 
 export const toMessage = (r: MessageRow): Message => ({
@@ -48,6 +58,8 @@ export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
   tags: r.tags ?? [],
   notes: r.notes,
   botActive: r.bot_active,
+  assignedTo: r.assigned_to ?? null,
+  aiSummary: r.ai_summary ?? null,
   messages,
   createdAt: r.created_at,
 });

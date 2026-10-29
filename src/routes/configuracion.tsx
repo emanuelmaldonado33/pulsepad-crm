@@ -17,6 +17,8 @@ import {
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WhatsAppChannel } from "@/components/crm/WhatsAppChannel";
+import { Switch } from "@/components/ui/switch";
+import type { Member } from "@/lib/crm/types";
 
 export const Route = createFileRoute("/configuracion")({
   head: () => ({
@@ -64,12 +66,16 @@ function Config() {
         <TabsList>
           <TabsTrigger value="ia">IA y marca</TabsTrigger>
           <TabsTrigger value="whatsapp">Canal WhatsApp</TabsTrigger>
+          <TabsTrigger value="equipo">Equipo</TabsTrigger>
         </TabsList>
         <TabsContent value="ia">
           <AiConfig />
         </TabsContent>
         <TabsContent value="whatsapp" className="mt-4">
           <WhatsAppChannel key={account.id} accountId={account.id} />
+        </TabsContent>
+        <TabsContent value="equipo" className="mt-4">
+          <TeamConfig key={account.id} />
         </TabsContent>
       </Tabs>
     </div>
@@ -283,6 +289,114 @@ function AiConfig() {
           </table>
         </div>
       </section>
+    </div>
+  );
+}
+
+const ROLE_LABEL: Record<Member["role"], string> = {
+  owner: "Propietario",
+  admin: "Administrador",
+  member: "Asesor",
+};
+
+/** Equipo: nombre, WhatsApp personal para avisos y disponibilidad para los turnos. */
+function TeamConfig() {
+  const { account, updateAccount, members, me, updateMember } = useCrm();
+  const isAdmin = members.some(
+    (m) => m.userId === me && (m.role === "owner" || m.role === "admin"),
+  );
+  return (
+    <div className="space-y-4">
+      <section className="space-y-3 rounded-2xl border bg-card p-5">
+        <h2 className="font-semibold">Equipo de {account.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          Los flujos usan estos datos en «Avisar al equipo» y «Asignar asesor». Quien esté marcado
+          como no disponible no recibe leads por turnos. Cada quien edita sus datos; propietarios y
+          administradores, los de todo el equipo.
+        </p>
+        <div className="divide-y">
+          {members.map((m) => (
+            <MemberRow
+              key={m.userId}
+              m={m}
+              editable={m.userId === me || isAdmin}
+              onSave={(patch) => updateMember(m.userId, patch)}
+            />
+          ))}
+        </div>
+      </section>
+      <section className="flex items-start gap-3 rounded-2xl border bg-card p-5">
+        <div className="flex-1">
+          <h2 className="font-semibold">Pausar el bot cuando un asesor escribe</h2>
+          <p className="text-sm text-muted-foreground">
+            Si un asesor manda un mensaje manual a un lead, el bot deja de responderle y queda
+            anotado en su historial. Se vuelve a encender desde la bandeja o con un flujo.
+          </p>
+        </div>
+        <Switch
+          aria-label="Pausar el bot cuando un asesor escribe"
+          disabled={!isAdmin}
+          checked={account.autoPauseBot ?? true}
+          onCheckedChange={(v) => void updateAccount(account.id, { autoPauseBot: v })}
+        />
+      </section>
+    </div>
+  );
+}
+
+function MemberRow({
+  m,
+  editable,
+  onSave,
+}: {
+  m: Member;
+  editable: boolean;
+  onSave: (patch: Partial<Pick<Member, "name" | "whatsappPhone" | "available">>) => Promise<void>;
+}) {
+  const [name, setName] = useState(m.name);
+  const [phone, setPhone] = useState(m.whatsappPhone);
+  const validPhone = /^\+?[0-9 ()-]{0,25}$/.test(phone);
+  const dirty = name !== m.name || phone !== m.whatsappPhone;
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-3">
+      <div className="min-w-40 flex-1">
+        <Input
+          aria-label="Nombre"
+          value={name}
+          disabled={!editable}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <div className="mt-1 text-xs text-muted-foreground">{ROLE_LABEL[m.role]}</div>
+      </div>
+      <div className="min-w-48 flex-1">
+        <Input
+          aria-label="WhatsApp personal"
+          value={phone}
+          disabled={!editable}
+          placeholder="+52 55 1234 5678"
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        {!validPhone && <div className="mt-1 text-xs text-destructive">Sólo números</div>}
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Switch
+          aria-label="Disponible"
+          disabled={!editable}
+          checked={m.available}
+          onCheckedChange={(v) => void onSave({ available: v })}
+        />
+        Disponible
+      </label>
+      {editable && (
+        <Button
+          size="sm"
+          disabled={!dirty || !validPhone || !name.trim()}
+          onClick={() => void onSave({ name: name.trim(), whatsappPhone: phone.trim() })}
+        >
+          <Save className="mr-1 h-3.5 w-3.5" /> Guardar
+        </Button>
+      )}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { applyTag, moveToStage, removeTag } from "./automation";
 import { leadPatch, toAccount, toAppointment, toFlow, toLead } from "./db";
-import { dispatchMessage } from "./whatsapp.server";
+import { dispatchMessage, sendInternalWhatsApp } from "./whatsapp.server";
 import {
   END_NODE,
   branchStart,
@@ -14,10 +14,62 @@ import {
   type FlowNode,
   type FlowStep,
   type Material,
+  type NotifyTarget,
 } from "./flows";
+import type { Account, Lead } from "./types";
 
 type Sb = SupabaseClient<Database>;
+type MemberRow = { user_id: string; role: string; display_name: string; whatsapp_phone: string };
 const MAX_STEPS = 20;
+
+/** Enlace directo al chat del lead, si la app conoce su URL pública (secreto PUBLIC_APP_URL). */
+export const chatLink = (leadId: string) => {
+  const base = process.env["PUBLIC_APP_URL"]?.replace(/\/+$/, "");
+  return base ? `${base}/inbox?lead=${encodeURIComponent(leadId)}` : null;
+};
+
+/** Destinatarios del aviso, sin repetidos y sólo del equipo de la subcuenta. */
+export function notifyRecipients(
+  to: NotifyTarget[],
+  members: MemberRow[],
+  assignedTo: string | null,
+) {
+  const ids = new Set<string>();
+  for (const t of to) {
+    if (t === "assigned") {
+      if (assignedTo) ids.add(assignedTo);
+    } else if (t === "admins") {
+      members
+        .filter((m) => m.role === "owner" || m.role === "admin")
+        .forEach((m) => ids.add(m.user_id));
+    } else ids.add(t);
+  }
+  return members.filter((m) => ids.has(m.user_id));
+}
+
+/** Texto del aviso: mensaje del paso, resumen de la IA (o lo último que escribió el lead) y enlace. */
+export function notifyBody(
+  text: string,
+  lead: Lead,
+  account: Account,
+  advisor: string | undefined,
+  lastLeadMessages: string[],
+) {
+  const summary =
+    lead.aiSummary?.trim() ||
+    (lastLeadMessages.length
+      ? lastLeadMessages.map((m) => `«${m.slice(0, 160)}»`).join("\n")
+      : "Aún no hay conversación.");
+  const link = chatLink(lead.id);
+  return [
+    renderText(text, { lead, account, advisor }),
+    `Resumen IA:\n${summary}`,
+    `${lead.name} · ${lead.phone} · P${lead.stage}`,
+    link ? `Abrir chat: ${link}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
 
 /** Hora a la que termina una espera; null = se omite (sin cita o la hora ya pasó). */
 export function waitTarget(
@@ -66,6 +118,14 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           .limit(1),
         sb.from("materials").select("*").eq("account_id", enr.account_id),
       ]);
+    const { data: memberRows } = await sb
+      .from("account_memberships")
+      .select("user_id, role, display_name, whatsapp_phone")
+      .eq("account_id", enr.account_id);
+    const members: MemberRow[] = memberRows ?? [];
+    const nameOf = (userId: string | null | undefined) =>
+      members.find((m) => m.user_id === userId)?.display_name || undefined;
+
     if (!fr || !lr || !ar) {
       await done({ status: "cancelled", cancel_reason: "Flujo o lead eliminado" });
       return "ran";
@@ -73,6 +133,12 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
     const flow = toFlow(fr);
     const account = toAccount(ar);
     let lead = toLead(lr, []);
+    const event = async (kind: string, body: string) => {
+      const { error } = await sb
+        .from("lead_events")
+        .insert({ account_id: account.id, lead_id: lead.id, kind, body: body.slice(0, 500) });
+      if (error) console.error("lead event failed", error.message);
+    };
     const appt = apr?.[0] ? toAppointment(apr[0]) : undefined;
     const materials: Material[] = (mr ?? []).map((m) => ({
       id: m.id,
@@ -103,7 +169,7 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
       // Anti-spam: si un trigger lo canceló mientras corría, parar.
       const { data: cur } = await sb
         .from("flow_enrollments")
-        .select("status, replied")
+        .select("status, replied, advisor_replied")
         .eq("id", id)
         .single();
       if (cur?.status !== "active") return "ran";
@@ -114,7 +180,13 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           .insert({
             lead_id: lead.id,
             sender: "bot",
-            body: renderText(st.text, { lead, account, appointment: appt, material }),
+            body: renderText(st.text, {
+              lead,
+              account,
+              appointment: appt,
+              material,
+              advisor: nameOf(lead.assignedTo),
+            }),
           })
           .select("id")
           .single();
@@ -124,22 +196,90 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           phone: lead.phone,
           source: lead.source,
           messageId: msg.id,
-          text: renderText(st.text, { lead, account, appointment: appt }),
+          text: renderText(st.text, {
+            lead,
+            account,
+            appointment: appt,
+            advisor: nameOf(lead.assignedTo),
+          }),
           material,
         });
       } else if (st.type === "action") {
+        const botBefore = lead.botActive;
         lead =
           st.action === "add_tag"
             ? applyTag(lead, st.value)
             : st.action === "remove_tag"
               ? removeTag(lead, st.value)
-              : moveToStage(lead, Number(st.value));
+              : st.action === "bot_on" || st.action === "bot_off"
+                ? { ...lead, botActive: st.action === "bot_on" }
+                : moveToStage(lead, Number(st.value));
         const { error } = await sb.from("leads").update(leadPatch(lead)).eq("id", lead.id);
         if (error) throw error;
+        if (botBefore !== lead.botActive)
+          await event(
+            "bot",
+            lead.botActive ? "Bot encendido por un flujo" : "Bot apagado por un flujo",
+          );
+      } else if (st.type === "assign") {
+        const { data: who, error } = await sb.rpc("assign_lead", {
+          p_lead_id: lead.id,
+          p_user_ids: st.userIds,
+          p_round_robin: st.mode === "round_robin",
+        });
+        if (error) throw error;
+        if (who) {
+          lead = { ...lead, assignedTo: who };
+          await event("asignacion", `Asignado a ${nameOf(who) ?? "un asesor"} por un flujo`);
+        } else await event("asignacion", "Nadie del equipo estaba disponible para asignar");
+      } else if (st.type === "notify") {
+        const recipients = notifyRecipients(st.to, members, lead.assignedTo ?? null);
+        if (recipients.length) {
+          const { data: recent } = await sb
+            .from("messages")
+            .select("body")
+            .eq("lead_id", lead.id)
+            .eq("sender", "lead")
+            .order("created_at", { ascending: false })
+            .limit(3);
+          const body = notifyBody(
+            st.text,
+            lead,
+            account,
+            nameOf(lead.assignedTo),
+            (recent ?? []).map((m) => m.body).reverse(),
+          );
+          const { data: created, error } = await sb
+            .from("notifications")
+            .insert(
+              recipients.map((r) => ({
+                account_id: account.id,
+                user_id: r.user_id,
+                lead_id: lead.id,
+                title: `Lead ${lead.name}`,
+                body,
+                wa_status: st.whatsapp ? "pendiente" : null,
+              })),
+            )
+            .select("id, user_id");
+          if (error) throw error;
+          if (st.whatsapp)
+            for (const n of created ?? []) {
+              const phone = recipients.find((r) => r.user_id === n.user_id)?.whatsapp_phone ?? "";
+              const status = await sendInternalWhatsApp(account.id, phone, body);
+              await sb.from("notifications").update({ wa_status: status }).eq("id", n.id);
+            }
+          await event(
+            "aviso",
+            `Aviso a ${recipients.map((r) => r.display_name || "un asesor").join(", ")}`,
+          );
+        } else
+          await event("aviso", "Aviso sin destinatarios (nadie asignado o sin administradores)");
       } else if (st.type === "condition") {
         const ok = evaluateCondition(st.rule, {
           lead,
           replied: cur.replied,
+          advisorReplied: cur.advisor_replied,
           hasAppointment: appt !== undefined,
         });
         nodeId = branchStart(st, next, ok);

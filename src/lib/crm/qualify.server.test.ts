@@ -187,3 +187,25 @@ describe("intención del mensaje", () => {
     expect(r.events.some((e) => e.text.startsWith("Intención del mensaje"))).toBe(false);
   });
 });
+
+describe("resumen para el asesor", () => {
+  it("guarda en el lead el resumen de la IA", async () => {
+    runQualifier.mockResolvedValue({
+      output: {
+        reply: "",
+        budget: null,
+        down_payment: null,
+        term_months: null,
+        intent: "informacion",
+        tags_to_add: [],
+        appointment_requested: false,
+        summary: " Busca depa.\nPresupuesto 3 M. ",
+      },
+      usage: { input: 1, output: 1, total: 2 },
+    });
+    const { client, calls } = db({ id: "m78" });
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    const upd = calls.find((c) => c.table === "leads" && c.op === "update")!;
+    expect(upd.payload).toMatchObject({ ai_summary: "Busca depa.\nPresupuesto 3 M." });
+  });
+});
