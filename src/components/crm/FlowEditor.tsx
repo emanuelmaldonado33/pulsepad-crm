@@ -11,13 +11,18 @@ import {
   ShieldCheck,
   GitBranch,
   CircleStop,
+  Repeat,
 } from "lucide-react";
 import { STAGES } from "@/lib/crm/types";
 import { MAX_BRANCH_DEPTH } from "@/lib/crm/flow-io";
 import {
+  CONVERSATION_TRIGGERS,
   FIELD_LABEL,
+  LEAD_INTENTS,
+  MESSAGE_INTENTS,
   VARIABLES,
   allSteps,
+  triggerProblem,
   materialIcon,
   sid,
   type ConditionRule,
@@ -25,6 +30,9 @@ import {
   type FlowStep,
   type LeadNumberField,
   type Material,
+  type MessageIntent,
+  type TriggerConfig,
+  type TriggerType,
 } from "@/lib/crm/flows";
 import {
   Dialog,
@@ -167,6 +175,177 @@ function RuleEditor({
             />
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+const TRIGGER_HINT: Partial<Record<TriggerType, string>> = {
+  reply: "Se activa con cada mensaje del lead. Los mensajes del asesor y del bot no cuentan.",
+  keyword:
+    "Sin importar mayúsculas ni acentos. Cuenta palabras o frases completas: «precio» no incluye «precios», escribe las dos si quieres ambas.",
+  intent:
+    "La IA clasifica cada mensaje que llega mientras el bot está activo y guarda la intención en la conversación.",
+  ad_lead: "Cuando el primer mensaje llega desde un anuncio de clic a WhatsApp.",
+  qualification: "Cuando la IA cambia la calificación del lead en su ficha.",
+};
+
+function TriggerEditor({ f, setF }: { f: Flow; setF: (f: Flow) => void }) {
+  const [words, setWords] = useState((f.triggerConfig.keywords ?? []).join(", "));
+  const conversation = CONVERSATION_TRIGGERS.includes(f.triggerType);
+  const cfg = f.triggerConfig;
+  const setCfg = (c: TriggerConfig) => setF({ ...f, triggerConfig: c });
+  const intents = cfg.intents ?? [];
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-2">
+        <select
+          className={sel}
+          aria-label="Tipo de disparador"
+          value={f.triggerType}
+          onChange={(e) => {
+            const t = e.target.value as TriggerType;
+            setWords("");
+            setF({
+              ...f,
+              triggerType: t,
+              triggerValue: t === "stage" ? "1" : "",
+              triggerConfig: {},
+              // Un disparador de conversación se repite con cada mensaje: sin reingreso por defecto.
+              allowReentry: !CONVERSATION_TRIGGERS.includes(t),
+            });
+          }}
+        >
+          <optgroup label="Conversación de WhatsApp">
+            <option value="reply">El lead responde</option>
+            <option value="keyword">El mensaje contiene…</option>
+            <option value="intent">La IA detecta una intención…</option>
+          </optgroup>
+          <optgroup label="Lead">
+            <option value="new_lead">Lead nuevo</option>
+            <option value="ad_lead">Lead nuevo de anuncio</option>
+            <option value="stage">Cuando entra a etapa…</option>
+            <option value="tag">Cuando recibe etiqueta…</option>
+            <option value="qualification">Cambió la calificación de IA</option>
+          </optgroup>
+        </select>
+        {f.triggerType === "stage" && (
+          <select
+            className={sel}
+            value={f.triggerValue}
+            onChange={(e) => setF({ ...f, triggerValue: e.target.value })}
+          >
+            {STAGES.map((s, i) => (
+              <option key={s.code} value={i}>
+                {s.code} · {s.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {f.triggerType === "tag" && (
+          <Input
+            className="w-48"
+            value={f.triggerValue}
+            onChange={(e) => setF({ ...f, triggerValue: tagInput(e.target.value) })}
+            placeholder="ej. calificando"
+          />
+        )}
+        {f.triggerType === "keyword" && (
+          <Input
+            className="min-w-64 flex-1"
+            aria-label="Palabras o frases"
+            value={words}
+            onChange={(e) => {
+              setWords(e.target.value);
+              setCfg({
+                ...cfg,
+                keywords: e.target.value
+                  .split(",")
+                  .map((w) => w.trim())
+                  .filter(Boolean),
+              });
+            }}
+            placeholder="precio, cotización, cuánto cuesta"
+          />
+        )}
+        {f.triggerType === "ad_lead" && (
+          <Input
+            className="min-w-64 flex-1"
+            value={f.triggerValue}
+            onChange={(e) => setF({ ...f, triggerValue: e.target.value })}
+            placeholder="El nombre del anuncio contiene… (opcional)"
+          />
+        )}
+        {f.triggerType === "qualification" && (
+          <select
+            className={sel}
+            value={f.triggerValue}
+            onChange={(e) => setF({ ...f, triggerValue: e.target.value })}
+          >
+            <option value="">Cualquier cambio</option>
+            {Object.entries(LEAD_INTENTS).map(([k, label]) => (
+              <option key={k} value={k}>
+                Cambia a «{label}»
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+      {f.triggerType === "intent" && (
+        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Intenciones">
+          {(Object.keys(MESSAGE_INTENTS) as MessageIntent[]).map((k) => {
+            const on = intents.includes(k);
+            return (
+              <button
+                key={k}
+                type="button"
+                aria-pressed={on}
+                onClick={() =>
+                  setCfg({ ...cfg, intents: on ? intents.filter((i) => i !== k) : [...intents, k] })
+                }
+                className={`rounded-full border px-2.5 py-1 text-xs ${on ? "border-primary bg-primary text-primary-foreground" : "hover:border-primary"}`}
+              >
+                {MESSAGE_INTENTS[k]}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {conversation && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          Solo si el lead
+          <select
+            className={`${sel} h-8 text-xs`}
+            aria-label="Filtro de etapa"
+            value={cfg.stage ?? ""}
+            onChange={(e) => {
+              const { stage: _stage, ...rest } = cfg;
+              setCfg(e.target.value === "" ? rest : { ...rest, stage: Number(e.target.value) });
+            }}
+          >
+            <option value="">está en cualquier etapa</option>
+            {STAGES.map((s, i) => (
+              <option key={s.code} value={i}>
+                está en {s.code} · {s.name}
+              </option>
+            ))}
+          </select>
+          y
+          <Input
+            className="h-8 w-44 text-xs"
+            aria-label="Filtro de etiqueta"
+            value={cfg.tag ?? ""}
+            onChange={(e) => {
+              const { tag: _tag, ...rest } = cfg;
+              const tag = tagInput(e.target.value);
+              setCfg(tag ? { ...rest, tag } : rest);
+            }}
+            placeholder="tiene la etiqueta (opcional)"
+          />
+        </div>
+      )}
+      {TRIGGER_HINT[f.triggerType] && (
+        <p className="text-xs text-muted-foreground">{TRIGGER_HINT[f.triggerType]}</p>
       )}
     </div>
   );
@@ -477,49 +656,7 @@ export function FlowEditor({
           <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
             <Zap className="h-3.5 w-3.5" /> Disparador
           </div>
-          <div className="flex flex-wrap gap-2">
-            <select
-              className={sel}
-              value={f.triggerType}
-              onChange={(e) =>
-                setF({
-                  ...f,
-                  triggerType: e.target.value as Flow["triggerType"],
-                  triggerValue: e.target.value === "stage" ? "1" : "",
-                })
-              }
-            >
-              <option value="new_lead">Lead nuevo</option>
-              <option value="stage">Cuando entra a etapa…</option>
-              <option value="tag">Cuando recibe etiqueta…</option>
-            </select>
-            {f.triggerType === "stage" && (
-              <select
-                className={sel}
-                value={f.triggerValue}
-                onChange={(e) => setF({ ...f, triggerValue: e.target.value })}
-              >
-                {STAGES.map((s, i) => (
-                  <option key={s.code} value={i}>
-                    {s.code} · {s.name}
-                  </option>
-                ))}
-              </select>
-            )}
-            {f.triggerType === "tag" && (
-              <Input
-                className="w-48"
-                value={f.triggerValue}
-                onChange={(e) =>
-                  setF({
-                    ...f,
-                    triggerValue: e.target.value.trim().toLowerCase().replace(/\s+/g, "-"),
-                  })
-                }
-                placeholder="ej. calificando"
-              />
-            )}
-          </div>
+          <TriggerEditor f={f} setF={setF} />
         </div>
 
         <StepList
@@ -535,8 +672,30 @@ export function FlowEditor({
             Regla anti-spam: si el prospecto responde o un asesor interviene, cancelar el flujo
             automáticamente y pasar el control al bot o al asesor.
           </span>
-          <Switch checked={f.stopOnReply} onCheckedChange={(v) => setF({ ...f, stopOnReply: v })} />
+          <Switch
+            aria-label="Regla anti-spam"
+            checked={f.stopOnReply}
+            onCheckedChange={(v) => setF({ ...f, stopOnReply: v })}
+          />
         </label>
+        <label className="flex items-start gap-3 rounded-xl border bg-muted/40 p-3 text-sm">
+          <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+          <span className="flex-1">
+            Permitir reingreso: un lead que ya terminó este flujo (o se canceló) puede volver a
+            entrar si se cumple el disparador otra vez. Nunca entra dos veces al mismo tiempo.
+          </span>
+          <Switch
+            aria-label="Permitir reingreso"
+            checked={f.allowReentry}
+            onCheckedChange={(v) => setF({ ...f, allowReentry: v })}
+          />
+        </label>
+        {f.allowReentry && CONVERSATION_TRIGGERS.includes(f.triggerType) && (
+          <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+            Con reingreso, este flujo vuelve a empezar cada vez que el lead escriba algo que cumpla
+            el disparador. Desactívalo si solo debe correr una vez por lead.
+          </p>
+        )}
         {asksReplied && f.stopOnReply && (
           <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
             Este flujo pregunta «¿Respondió?», pero con la regla anti-spam activa el flujo se
@@ -550,9 +709,7 @@ export function FlowEditor({
             Cancelar
           </Button>
           <Button
-            disabled={
-              saving || !f.name.trim() || (f.triggerType === "tag" && !f.triggerValue) || missingTag
-            }
+            disabled={saving || !f.name.trim() || triggerProblem(f) != null || missingTag}
             onClick={async () => {
               setSaving(true);
               if (await onSave(f)) onClose();

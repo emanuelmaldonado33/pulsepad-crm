@@ -204,6 +204,7 @@ export type Database = {
           next_run_at: string
           replied: boolean
           status: string
+          trigger_reason: string | null
         }
         Insert: {
           account_id: string
@@ -218,6 +219,7 @@ export type Database = {
           next_run_at?: string
           replied?: boolean
           status?: string
+          trigger_reason?: string | null
         }
         Update: {
           account_id?: string
@@ -232,6 +234,7 @@ export type Database = {
           next_run_at?: string
           replied?: boolean
           status?: string
+          trigger_reason?: string | null
         }
         Relationships: [
           {
@@ -260,6 +263,7 @@ export type Database = {
       flows: {
         Row: {
           account_id: string
+          allow_reentry: boolean
           active: boolean
           created_at: string
           id: string
@@ -268,9 +272,11 @@ export type Database = {
           stop_on_reply: boolean
           trigger_type: string
           trigger_value: string
+          trigger_config: Json
         }
         Insert: {
           account_id: string
+          allow_reentry?: boolean
           active?: boolean
           created_at?: string
           id?: string
@@ -279,9 +285,11 @@ export type Database = {
           stop_on_reply?: boolean
           trigger_type?: string
           trigger_value?: string
+          trigger_config?: Json
         }
         Update: {
           account_id?: string
+          allow_reentry?: boolean
           active?: boolean
           created_at?: string
           id?: string
@@ -290,6 +298,7 @@ export type Database = {
           stop_on_reply?: boolean
           trigger_type?: string
           trigger_value?: string
+          trigger_config?: Json
         }
         Relationships: [
           {
@@ -304,9 +313,12 @@ export type Database = {
       leads: {
         Row: {
           account_id: string
+          ad_id: string | null
+          ad_name: string | null
           bot_active: boolean
           budget: number | null
           created_at: string
+          ctwa_clid: string | null
           down_payment: number | null
           id: string
           intent: string | null
@@ -321,9 +333,12 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          ad_id?: string | null
+          ad_name?: string | null
           bot_active?: boolean
           budget?: number | null
           created_at?: string
+          ctwa_clid?: string | null
           down_payment?: number | null
           id?: string
           intent?: string | null
@@ -338,9 +353,12 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          ad_id?: string | null
+          ad_name?: string | null
           bot_active?: boolean
           budget?: number | null
           created_at?: string
+          ctwa_clid?: string | null
           down_payment?: number | null
           id?: string
           intent?: string | null
@@ -405,6 +423,7 @@ export type Database = {
         Row: {
           ai_applied_at: string | null
           ai_attempts: number
+          ai_intent: string | null
           ai_last_error: string | null
           ai_processing_at: string | null
           ai_status: string
@@ -419,6 +438,7 @@ export type Database = {
         Insert: {
           ai_applied_at?: string | null
           ai_attempts?: number
+          ai_intent?: string | null
           ai_last_error?: string | null
           ai_processing_at?: string | null
           ai_status?: string
@@ -433,6 +453,7 @@ export type Database = {
         Update: {
           ai_applied_at?: string | null
           ai_attempts?: number
+          ai_intent?: string | null
           ai_last_error?: string | null
           ai_processing_at?: string | null
           ai_status?: string

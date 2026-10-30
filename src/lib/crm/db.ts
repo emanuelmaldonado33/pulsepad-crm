@@ -30,6 +30,7 @@ export const toMessage = (r: MessageRow): Message => ({
   text: r.body,
   at: r.created_at,
   waStatus: r.wa_status,
+  intent: r.ai_intent ?? null,
 });
 
 export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
@@ -82,6 +83,12 @@ export const toFlow = (r: T["flows"]["Row"]): Flow => ({
   active: r.active,
   triggerType: r.trigger_type as Flow["triggerType"],
   triggerValue: r.trigger_value,
+  triggerConfig: (r.trigger_config &&
+  typeof r.trigger_config === "object" &&
+  !Array.isArray(r.trigger_config)
+    ? r.trigger_config
+    : {}) as unknown as Flow["triggerConfig"],
+  allowReentry: r.allow_reentry ?? true,
   steps: (Array.isArray(r.steps) ? r.steps : []) as unknown as Flow["steps"],
   stopOnReply: r.stop_on_reply,
 });
@@ -97,5 +104,6 @@ export const toEnrollment = (r: T["flow_enrollments"]["Row"]): Enrollment => ({
   nextRunAt: r.next_run_at,
   replied: r.replied,
   cancelReason: r.cancel_reason,
+  triggerReason: r.trigger_reason ?? null,
   createdAt: r.created_at,
 });

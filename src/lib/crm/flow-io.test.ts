@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportFlow, extractJson, parseFlow } from "./flow-io";
+import { exportFlow, extractJson, parseFlow, parseTriggerConfig } from "./flow-io";
 import type { Flow, FlowStep } from "./flows";
 
 const mats = [{ id: "m1", name: "Video de avances" }];
@@ -13,6 +13,8 @@ describe("importar/exportar flujos", () => {
       active: true,
       triggerType: "stage",
       triggerValue: "2",
+      triggerConfig: {},
+      allowReentry: true,
       stopOnReply: true,
       steps: [
         { id: "1", type: "message", text: "Hola {{nombre}}", materialId: "m1" },
@@ -107,5 +109,69 @@ describe("importar/exportar flujos", () => {
   });
   it("extrae JSON de un bloque ```json", () => {
     expect(extractJson('Aquí está:\n```json\n{"a":1}\n```')).toEqual({ a: 1 });
+  });
+});
+
+describe("disparadores de conversación en JSON", () => {
+  it("ida y vuelta conserva palabras clave, filtro y reingreso", () => {
+    const f = parseFlow(
+      {
+        trigger: {
+          type: "keyword",
+          config: { keywords: [" precio ", "precio", "cotización", ""], stage: "P2", tag: "#VIP" },
+        },
+        allowReentry: false,
+        steps: [{ type: "end" }],
+      },
+      "a",
+      [],
+    );
+    expect(f.triggerType).toBe("keyword");
+    expect(f.triggerConfig).toEqual({ keywords: ["precio", "cotización"], stage: 2, tag: "vip" });
+    expect(f.allowReentry).toBe(false);
+    const back = parseFlow(JSON.parse(JSON.stringify(exportFlow(f, () => null))), "b", []);
+    expect(back.triggerConfig).toEqual(f.triggerConfig);
+    expect(back.allowReentry).toBe(false);
+  });
+  it("descarta intenciones desconocidas y exige al menos una", () => {
+    const f = parseFlow(
+      {
+        trigger: { type: "intent", config: { intents: ["pide_precio", "hackear"] } },
+        steps: [{ type: "end" }],
+      },
+      "a",
+      [],
+    );
+    expect(f.triggerConfig).toEqual({ intents: ["pide_precio"] });
+    expect(() =>
+      parseFlow(
+        { trigger: { type: "intent", config: { intents: ["x"] } }, steps: [{ type: "end" }] },
+        "a",
+        [],
+      ),
+    ).toThrow(/intención/);
+    expect(() =>
+      parseFlow({ trigger: { type: "keyword" }, steps: [{ type: "end" }] }, "a", []),
+    ).toThrow(/palabras/);
+  });
+  it("los disparadores de lead no guardan filtros de conversación", () => {
+    expect(parseTriggerConfig("new_lead", { stage: 2, keywords: ["x"] })).toEqual({});
+    expect(parseTriggerConfig("reply", { stage: 9, tag: "" })).toEqual({});
+  });
+  it("valida la calificación de IA y conserva el nombre del anuncio", () => {
+    expect(
+      parseFlow(
+        { trigger: { type: "ad_lead", value: " Preventa " }, steps: [{ type: "end" }] },
+        "a",
+        [],
+      ).triggerValue,
+    ).toBe("Preventa");
+    expect(() =>
+      parseFlow(
+        { trigger: { type: "qualification", value: "magia" }, steps: [{ type: "end" }] },
+        "a",
+        [],
+      ),
+    ).toThrow();
   });
 });

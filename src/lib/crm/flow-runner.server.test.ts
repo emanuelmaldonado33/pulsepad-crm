@@ -110,3 +110,36 @@ describe("motor de flujos con ramas sí/no", () => {
     expect(t.enrUpdates().at(-1)).toMatchObject({ status: "cancelled" });
   });
 });
+
+describe("runDueForLead", () => {
+  it("corre ya las inscripciones vencidas del lead, sólo en cuentas con propietario", async () => {
+    const { runDueForLead } = await import("./flow-runner.server");
+    const sb = fakeSupabase((q: FakeQuery) => {
+      if (
+        q.table === "flow_enrollments" &&
+        q.op === "select" &&
+        q.filters.some((f) => f[1] === "lead_id")
+      )
+        return {
+          data: [
+            { id: "e-ok", account_id: "acc" },
+            { id: "e-huerfana", account_id: "sin-dueno" },
+          ],
+        };
+      if (q.table === "account_memberships") return { data: [{ account_id: "acc" }] };
+      return {};
+    });
+    await runDueForLead(sb.client as never, "l1");
+    const read = sb.calls[0]!;
+    expect(read.filters).toEqual(
+      expect.arrayContaining([
+        ["eq", "lead_id", "l1"],
+        ["eq", "status", "active"],
+      ]),
+    );
+    const claims = sb.calls
+      .filter((c) => c.table === "flow_enrollments" && c.op === "update")
+      .map((c) => c.filters.find((f) => f[1] === "id")?.[2]);
+    expect(claims).toEqual(["e-ok"]);
+  });
+});

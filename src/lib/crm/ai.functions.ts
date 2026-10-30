@@ -22,5 +22,11 @@ export const qualifyMessage = createServerFn({ method: "POST" })
     }
     // Sólo el servidor escribe mensajes como lead o bot.
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    return qualifyLead(supabaseAdmin, data.leadId, data.text);
+    const result = await qualifyLead(supabaseAdmin, data.leadId, data.text);
+    // Los flujos que disparó el mensaje corren ya, como con un mensaje real de WhatsApp.
+    const { runDueForLead } = await import("./flow-runner.server");
+    await runDueForLead(supabaseAdmin, data.leadId).catch((e: unknown) =>
+      console.error("simulator flow run failed", e instanceof Error ? e.message : e),
+    );
+    return result;
   });

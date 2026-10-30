@@ -3,12 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSupabase, type FakeQuery, type FakeResult } from "@/test/fake-supabase";
 
 const processInboundMessage = vi.fn();
+const runDueForLead = vi.fn();
 let respond: (q: FakeQuery) => FakeResult | undefined = () => ({});
 const db = fakeSupabase((q) => respond(q));
 
 vi.mock("@/integrations/supabase/client.server", () => ({ supabaseAdmin: db.client }));
 vi.mock("@/lib/crm/inbound.server", () => ({
   processInboundMessage: (...a: unknown[]) => processInboundMessage(...a),
+}));
+vi.mock("@/lib/crm/flow-runner.server", () => ({
+  runDueForLead: (...a: unknown[]) => runDueForLead(...a),
 }));
 
 const { Route } = await import("@/routes/api/public/whatsapp/webhook");
@@ -23,7 +27,7 @@ const channel = {
   app_secret: SECRET,
   enabled: true,
 };
-const payload = (id = "wamid.1") =>
+const payload = (id = "wamid.1", extra: Record<string, unknown> = {}) =>
   JSON.stringify({
     entry: [
       {
@@ -31,7 +35,9 @@ const payload = (id = "wamid.1") =>
           {
             value: {
               metadata: { phone_number_id: "1000001" },
-              messages: [{ from: "5215512345678", id, type: "text", text: { body: "hola" } }],
+              messages: [
+                { from: "5215512345678", id, type: "text", text: { body: "hola" }, ...extra },
+              ],
             },
           },
         ],
@@ -69,6 +75,7 @@ beforeEach(() => {
   db.calls.length = 0;
   processInboundMessage.mockReset();
   processInboundMessage.mockResolvedValue("processed");
+  runDueForLead.mockReset().mockResolvedValue(0);
   normal();
 });
 
@@ -95,6 +102,53 @@ describe("webhook de WhatsApp", () => {
       ai_status: "pending",
     });
     expect(processInboundMessage).toHaveBeenCalledWith(db.client, "new-msg");
+  });
+
+  it("después de la IA corre ya los flujos que disparó el mensaje", async () => {
+    const order: string[] = [];
+    processInboundMessage.mockImplementation(async () => order.push("ia"));
+    runDueForLead.mockImplementation(async () => order.push("flujos"));
+    await post(payload());
+    expect(runDueForLead).toHaveBeenCalledWith(db.client, "L1");
+    expect(order).toEqual(["ia", "flujos"]);
+  });
+
+  it("un fallo de los flujos no cambia la respuesta a Meta", async () => {
+    runDueForLead.mockRejectedValue(new Error("caído"));
+    expect((await post(payload())).status).toBe(200);
+  });
+
+  it("un lead nuevo de anuncio guarda el anuncio (dispara «Lead nuevo de anuncio»)", async () => {
+    normal((q) => {
+      if (q.table === "leads" && q.op === "select") return { data: [] };
+      if (q.table === "leads" && q.op === "insert") return { data: { id: "L2" } };
+      return undefined;
+    });
+    const referral = {
+      source_type: "ad",
+      source_id: "120000",
+      headline: " Preventa Octubre ",
+      ctwa_clid: "clid-1",
+    };
+    await post(payload("wamid.2", { referral }));
+    const lead = db.calls.find((c) => c.table === "leads" && c.op === "insert")!;
+    expect(lead.payload).toMatchObject({
+      account_id: "acc",
+      ad_id: "120000",
+      ad_name: "Preventa Octubre",
+      ctwa_clid: "clid-1",
+    });
+  });
+
+  it("un lead nuevo sin anuncio no lleva datos de anuncio", async () => {
+    normal((q) => {
+      if (q.table === "leads" && q.op === "select") return { data: [] };
+      if (q.table === "leads" && q.op === "insert") return { data: { id: "L2" } };
+      return undefined;
+    });
+    await post(payload("wamid.3"));
+    const lead = db.calls.find((c) => c.table === "leads" && c.op === "insert")!;
+    expect(lead.payload).not.toHaveProperty("ad_id");
   });
 
   it("un reintento de Meta con el mismo wamid no duplica el mensaje", async () => {

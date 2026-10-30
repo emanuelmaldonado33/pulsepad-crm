@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { STAGES } from "./types";
 import { TAG_RULES } from "./automation";
-import { VARIABLES } from "./flows";
+import { LEAD_INTENTS, MESSAGE_INTENTS, VARIABLES } from "./flows";
 import { extractJson } from "./flow-io";
 
 /** Pide a Claude un borrador de flujo en JSON. La validación final ocurre en el cliente con parseFlow. */
@@ -31,7 +31,8 @@ Diseñas flujos para la subcuenta «${acc.name}» que vende: ${acc.product || "(
 Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
 {
   "name": string,
-  "trigger": { "type": "new_lead" | "stage" | "tag", "value": string },   // stage: "0".."7"; tag: etiqueta-en-minusculas; new_lead: ""
+  "trigger": Disparador,
+  "allowReentry": boolean,   // false = un lead que ya pasó por el flujo no vuelve a entrar (recomendado en disparadores de conversación)
   "stopOnReply": true,
   "steps": [
     { "type": "message", "text": string, "material": string | null },   // material = nombre EXACTO de la biblioteca o null
@@ -42,6 +43,19 @@ Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
     { "type": "end" }   // termina el flujo para ese lead
   ]
 }
+Disparador = { "type": "new_lead", "value": "" }
+      | { "type": "stage", "value": "0".."7" }
+      | { "type": "tag", "value": etiqueta-en-minusculas }
+      | { "type": "reply", "value": "", "config": Filtro }   // cada mensaje del lead
+      | { "type": "keyword", "value": "", "config": { "keywords": [string], ...Filtro } }   // palabras o frases completas, sin importar acentos
+      | { "type": "intent", "value": "", "config": { "intents": [${Object.keys(MESSAGE_INTENTS)
+        .map((i) => `"${i}"`)
+        .join(" | ")}], ...Filtro } }   // la IA clasifica cada mensaje
+      | { "type": "ad_lead", "value": texto que contiene el nombre del anuncio o "" }
+      | { "type": "qualification", "value": ${Object.keys(LEAD_INTENTS)
+        .map((i) => `"${i}"`)
+        .join(" | ")} | "" }
+Filtro = { "stage"?: 0..7, "tag"?: string }   // opcional: solo leads en esa etapa o con esa etiqueta
 Regla = { "kind": "replied" }   // respondió desde que entró al flujo (requiere "stopOnReply": false)
       | { "kind": "tag", "tag": string }
       | { "kind": "stage", "op": "eq" | "gte", "stage": "0".."7" }

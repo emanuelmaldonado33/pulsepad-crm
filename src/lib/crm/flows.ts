@@ -16,7 +16,58 @@ export type FlowStep =
   | { id: string; type: "condition"; rule: ConditionRule; yes: FlowStep[]; no: FlowStep[] }
   | { id: string; type: "end" };
 
-export type TriggerType = "new_lead" | "stage" | "tag";
+export type TriggerType =
+  "new_lead" | "stage" | "tag" | "reply" | "keyword" | "intent" | "ad_lead" | "qualification";
+
+/** Intenciones que la IA detecta en cada mensaje del lead (messages.ai_intent). */
+export const MESSAGE_INTENTS = {
+  quiere_comprar: "Quiere comprar",
+  pide_precio: "Pide precio o cotización",
+  pide_cita: "Pide una cita",
+  objecion: "Tiene una objeción",
+  no_interesado: "No le interesa",
+  quiere_humano: "Pide hablar con un humano",
+} as const;
+export type MessageIntent = keyof typeof MESSAGE_INTENTS;
+
+/** Calificación de IA del lead (leads.intent), la que muestra la ficha. */
+export const LEAD_INTENTS: Record<string, string> = {
+  informacion: "Pide información",
+  calificando: "Calificando",
+  listo_para_cita: "Listo para cita",
+  quiere_humano: "Quiere humano",
+  no_interesado: "No interesado",
+  seguimiento: "Seguimiento",
+};
+
+/**
+ * Opciones del disparador (flows.trigger_config). stage/tag limitan los disparadores de
+ * conversación a leads en esa etapa o con esa etiqueta.
+ */
+export interface TriggerConfig {
+  keywords?: string[];
+  intents?: MessageIntent[];
+  stage?: number;
+  tag?: string;
+}
+
+/** Disparadores que reaccionan a un mensaje del lead (corren en la base, al guardar el mensaje). */
+export const CONVERSATION_TRIGGERS: TriggerType[] = ["reply", "keyword", "intent"];
+
+/** Igual que flow_norm() en la base: sin acentos, minúsculas, sólo letras y números. */
+export const normalizeText = (s: string) =>
+  s
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+
+/** Primera palabra clave contenida (como palabra o frase completa) en el mensaje. */
+export const matchKeyword = (keywords: string[], body: string) => {
+  const text = ` ${normalizeText(body)} `;
+  return keywords.find((k) => normalizeText(k) && text.includes(` ${normalizeText(k)} `)) ?? null;
+};
 
 export interface Flow {
   id: string;
@@ -25,6 +76,9 @@ export interface Flow {
   active: boolean;
   triggerType: TriggerType;
   triggerValue: string;
+  triggerConfig: TriggerConfig;
+  /** false = un lead que ya pasó por el flujo no vuelve a entrar. */
+  allowReentry: boolean;
   steps: FlowStep[];
   stopOnReply: boolean;
 }
@@ -41,6 +95,8 @@ export interface Enrollment {
   nextRunAt: string;
   replied: boolean;
   cancelReason: string | null;
+  /** Por qué entró al flujo (lo escribe el disparador en la base). */
+  triggerReason: string | null;
   createdAt: string;
 }
 
@@ -231,15 +287,51 @@ export function matchTriggers(
   });
 }
 
-export const triggerLabel = (
-  f: Pick<Flow, "triggerType" | "triggerValue">,
+const filterLabel = (c: TriggerConfig, stageName: (n: number) => string) =>
+  [c.stage != null ? `en ${stageName(c.stage)}` : "", c.tag ? `con #${c.tag}` : ""]
+    .filter(Boolean)
+    .join(" y ");
+
+export function triggerLabel(
+  f: Pick<Flow, "triggerType" | "triggerValue"> & { triggerConfig?: TriggerConfig },
   stageName: (n: number) => string,
-) =>
-  f.triggerType === "new_lead"
-    ? "Lead nuevo"
-    : f.triggerType === "stage"
-      ? `Entra a ${stageName(Number(f.triggerValue))}`
-      : `Recibe etiqueta #${f.triggerValue}`;
+): string {
+  const c = f.triggerConfig ?? {};
+  const only = filterLabel(c, stageName);
+  const suffix = only ? ` (solo leads ${only})` : "";
+  switch (f.triggerType) {
+    case "new_lead":
+      return "Lead nuevo";
+    case "stage":
+      return `Entra a ${stageName(Number(f.triggerValue))}`;
+    case "tag":
+      return `Recibe etiqueta #${f.triggerValue}`;
+    case "reply":
+      return `El lead responde${suffix}`;
+    case "keyword":
+      return `El mensaje contiene ${(c.keywords ?? []).map((k) => `«${k}»`).join(", ") || "…"}${suffix}`;
+    case "intent":
+      return `La IA detecta: ${(c.intents ?? []).map((i) => MESSAGE_INTENTS[i]?.toLowerCase() ?? i).join(", ") || "…"}${suffix}`;
+    case "ad_lead":
+      return f.triggerValue ? `Lead nuevo de anuncio «${f.triggerValue}»` : "Lead nuevo de anuncio";
+    case "qualification":
+      return f.triggerValue
+        ? `Calificación de IA cambia a «${LEAD_INTENTS[f.triggerValue] ?? f.triggerValue}»`
+        : "Cambió la calificación de IA";
+    default:
+      return "Disparador";
+  }
+}
+
+/** ¿Falta algo para que el disparador pueda activarse? Devuelve el aviso o null. */
+export function triggerProblem(f: Pick<Flow, "triggerType" | "triggerValue" | "triggerConfig">) {
+  if (f.triggerType === "tag" && !f.triggerValue) return "Escribe la etiqueta del disparador.";
+  if (f.triggerType === "keyword" && !(f.triggerConfig.keywords ?? []).some((k) => k.trim()))
+    return "Escribe al menos una palabra o frase.";
+  if (f.triggerType === "intent" && !(f.triggerConfig.intents ?? []).length)
+    return "Elige al menos una intención.";
+  return null;
+}
 
 export interface FlowTemplate {
   key: string;
@@ -247,6 +339,9 @@ export interface FlowTemplate {
   description: string;
   triggerType: TriggerType;
   triggerValue: string;
+  triggerConfig?: TriggerConfig;
+  /** Por defecto true. */
+  allowReentry?: boolean;
   steps: (materials: Material[]) => FlowStep[];
   /** Por defecto true. Los flujos que preguntan "¿respondió?" necesitan false. */
   stopOnReply?: boolean;
@@ -342,6 +437,62 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       },
     ],
     stopOnReply: false,
+  },
+  {
+    key: "pidio-cotizacion",
+    name: "Pidió cotización",
+    description:
+      "Cuando la IA detecta que el lead pide precio: le confirma, lo etiqueta y, si a las 2 horas no ha respondido, vuelve a escribirle.",
+    triggerType: "intent",
+    triggerValue: "",
+    triggerConfig: { intents: ["pide_precio"] },
+    allowReentry: false,
+    steps: (m) => [
+      { id: sid(), type: "action", action: "add_tag", value: "pidio-cotizacion" },
+      {
+        id: sid(),
+        type: "message",
+        text: "¡Con gusto {{nombre}}! 🙌 Te preparo la cotización de {{proyecto}}. Mientras tanto te dejo la información con precios:",
+        materialId: firstOf(m, "pdf"),
+      },
+      { id: sid(), type: "wait", amount: 2, unit: "hour" },
+      {
+        id: sid(),
+        type: "condition",
+        rule: { kind: "replied" },
+        yes: [],
+        no: [
+          {
+            id: sid(),
+            type: "message",
+            text: "{{nombre}}, ¿pudiste revisar los precios? Si me dices tu presupuesto aproximado te digo qué opción te conviene más 🙂",
+            materialId: null,
+          },
+        ],
+      },
+    ],
+    stopOnReply: false,
+  },
+  {
+    key: "no-me-interesa",
+    name: "No me interesa",
+    description:
+      "Cuando el lead escribe «no me interesa» o algo parecido: se despide con amabilidad y lo marca como no califica (P7, bot en pausa).",
+    triggerType: "keyword",
+    triggerValue: "",
+    triggerConfig: {
+      keywords: ["no me interesa", "no estoy interesado", "no estoy interesada", "ya no gracias"],
+    },
+    allowReentry: false,
+    steps: () => [
+      {
+        id: sid(),
+        type: "message",
+        text: "Entiendo {{nombre}}, gracias por avisarme 🙏 Si más adelante quieres retomar lo de {{proyecto}}, aquí estoy.",
+        materialId: null,
+      },
+      { id: sid(), type: "action", action: "add_tag", value: "no-califica" },
+    ],
   },
   {
     key: "recordatorio",
