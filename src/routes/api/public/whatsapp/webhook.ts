@@ -5,6 +5,9 @@ import { z } from "zod";
 const MAX_BODY_BYTES = 4_000_000;
 /** Campos de coexistencia: lo que el negocio escribe desde la app y el historial. */
 const COEXISTENCE_FIELDS = new Set(["smb_message_echoes", "history", "smb_app_state_sync"]);
+const mediaSchema = z
+  .object({ id: z.string().min(1).max(250), caption: z.string().max(3000).optional() })
+  .passthrough();
 const payloadSchema = z
   .object({
     entry: z
@@ -46,6 +49,14 @@ const payloadSchema = z
                             .passthrough()
                             .optional(),
                           button: z.object({ text: z.string().max(2000) }).optional(),
+                          // Archivos: se transcriben (voz) o se describen (foto) antes de guardar.
+                          audio: mediaSchema.optional(),
+                          image: mediaSchema.optional(),
+                          video: mediaSchema.optional(),
+                          document: mediaSchema
+                            .extend({ filename: z.string().max(500).optional() })
+                            .optional(),
+                          sticker: mediaSchema.optional(),
                           interactive: z
                             .object({
                               button_reply: z.object({ title: z.string().max(2000) }).optional(),
@@ -181,12 +192,14 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         }
 
         const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
+        const { qrSourceOf } = await import("@/lib/crm/qr.server");
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
         const coexistence = await import("@/lib/crm/coexistence.server");
         // Los canales del registro integrado firman con el App Secret de la app de Pulse.
         const platformSecret = process.env["META_APP_SECRET"] ?? "";
+        const { mediaOf, mediaToText } = await import("@/lib/crm/media.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
         const leadsWithNews = new Set<string>();
@@ -278,13 +291,16 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               if (candidatesError) return new Response("Temporary failure", { status: 500 });
               let leadId = (cands ?? []).find((l) => samePhone(l.phone, m.from))?.id;
               if (!leadId) {
+                // QR de lona o vendedor: el primer mensaje trae "ref CODIGO".
+                const qr = await qrSourceOf(sb, ch.account_id, textOf(m));
                 const { data: created, error: createError } = await sb
                   .from("leads")
                   .insert({
                     account_id: ch.account_id,
                     name,
                     phone: `+${m.from}`,
-                    source: "WhatsApp",
+                    source: qr?.name ?? "WhatsApp",
+                    ...(qr ? { qr_source_id: qr.id, assigned_to: qr.assigned_to } : {}),
                     ...adOf(m.referral),
                   })
                   .select("id")
@@ -294,8 +310,20 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                   return new Response("Temporary failure", { status: 500 });
                 }
                 leadId = created.id;
+                if (qr)
+                  await sb.from("lead_events").insert({
+                    account_id: ch.account_id,
+                    lead_id: created.id,
+                    kind: "qr",
+                    body: `Llegó por el QR «${qr.name}»`,
+                  });
               }
-              const body = textOf(m).slice(0, 2000);
+              // Notas de voz y fotos se guardan ya como texto: así las leen la IA, las
+              // palabras clave de los flujos (trigger al insertar) y el asesor.
+              const media = mediaOf(m);
+              const body = (
+                media && !m.text ? await mediaToText(media, ch.access_token) : textOf(m)
+              ).slice(0, 2000);
               const { data: inserted, error: insertError } = await sb
                 .from("messages")
                 .insert({

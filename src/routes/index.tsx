@@ -10,6 +10,7 @@ import { STAGES, type Lead } from "@/lib/crm/types";
 import { moveToStage } from "@/lib/crm/automation";
 import { Input } from "@/components/ui/input";
 import { toast } from "sonner";
+import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -36,6 +37,13 @@ function Pipeline() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("todos");
+  /** Origen del lead: lona/QR, anuncio, importación… "" = todos. */
+  const [origin, setOrigin] = useState("");
+  const origins = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const l of leads) count.set(l.source, (count.get(l.source) ?? 0) + 1);
+    return [...count].sort((a, b) => b[1] - a[1]);
+  }, [leads]);
   const [dragId, setDragId] = useState<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -50,13 +58,14 @@ function Pipeline() {
           !`${l.name} ${l.phone} ${l.tags.join(" ")}`.toLowerCase().includes(q.toLowerCase())
         )
           return false;
+        if (origin && l.source !== origin) return false;
         if (filter === "bot") return l.botActive;
         if (filter === "humano") return !l.botActive;
         if (filter === "vip") return l.tags.includes("vip");
         if (filter === "hoy") return l.stage <= 1;
         return true;
       }),
-    [leads, q, filter],
+    [leads, q, filter, origin],
   );
 
   const open = filtered.filter((l) => !(l.stage === 7 && l.outcome === "no_califica"));
@@ -111,6 +120,24 @@ function Pipeline() {
           />
         </div>
         <Segmented value={filter} onChange={setFilter} options={FILTERS} />
+        {origins.length > 1 && (
+          <Select value={origin || "*"} onValueChange={(v) => setOrigin(v === "*" ? "" : v)}>
+            <SelectTrigger
+              className="h-8 w-auto gap-2 rounded-full text-[13px]"
+              aria-label="Origen"
+            >
+              <span className="text-muted-foreground">Origen:</span> {origin || "Todos"}
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="*">Todos</SelectItem>
+              {origins.map(([o, n]) => (
+                <SelectItem key={o} value={o}>
+                  {o} · {n}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <Button variant="outline" size="sm" className="ml-auto" onClick={() => setImportOpen(true)}>
           <Upload className="mr-2 h-4 w-4" /> Importar CSV
         </Button>

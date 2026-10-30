@@ -68,6 +68,7 @@ export type Database = {
           initials: string
           name: string
           product: string
+          public_whatsapp: string
           qualification_rules: string
           setter_prompt: string
           standard_tags: string[]
@@ -87,6 +88,7 @@ export type Database = {
           initials: string
           name: string
           product?: string
+          public_whatsapp?: string
           qualification_rules?: string
           setter_prompt?: string
           standard_tags?: string[]
@@ -106,6 +108,7 @@ export type Database = {
           initials?: string
           name?: string
           product?: string
+          public_whatsapp?: string
           qualification_rules?: string
           setter_prompt?: string
           standard_tags?: string[]
@@ -394,6 +397,7 @@ export type Database = {
           opted_out_at: string | null
           outcome: string | null
           phone: string
+          qr_source_id: string | null
           source: string
           stage: number
           tags: string[]
@@ -419,6 +423,7 @@ export type Database = {
           opted_out_at?: string | null
           outcome?: string | null
           phone?: string
+          qr_source_id?: string | null
           source?: string
           stage?: number
           tags?: string[]
@@ -444,6 +449,7 @@ export type Database = {
           opted_out_at?: string | null
           outcome?: string | null
           phone?: string
+          qr_source_id?: string | null
           source?: string
           stage?: number
           tags?: string[]
@@ -603,6 +609,44 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      qr_sources: {
+        Row: {
+          account_id: string
+          active: boolean
+          assigned_to: string | null
+          code: string
+          created_at: string
+          id: string
+          name: string
+        }
+        Insert: {
+          account_id: string
+          active?: boolean
+          assigned_to?: string | null
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+        }
+        Update: {
+          account_id?: string
+          active?: boolean
+          assigned_to?: string | null
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qr_sources_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
             referencedColumns: ["id"]
           },
         ]

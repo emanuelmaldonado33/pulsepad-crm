@@ -10,7 +10,15 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import type { Account, AppNotification, Appointment, Lead, Member, Message } from "./types";
+import type {
+  Account,
+  AppNotification,
+  Appointment,
+  Lead,
+  Member,
+  Message,
+  QrSource,
+} from "./types";
 import { applyTag } from "./automation";
 import type { Enrollment, Flow, Material, WaTemplate } from "./flows";
 import { useServerFn } from "@tanstack/react-start";
@@ -24,7 +32,9 @@ import {
   toLead,
   toMember,
   toMessage,
+  toQrSource,
 } from "./db";
+import { newQrCode } from "./qr";
 import type { Json } from "@/integrations/supabase/types";
 
 interface State {
@@ -37,6 +47,7 @@ interface State {
   members: Member[];
   notifications: AppNotification[];
   templates: (WaTemplate & { accountId: string })[];
+  qrSources: QrSource[];
   me: string | null;
 }
 
@@ -86,6 +97,14 @@ interface Ctx {
   templates: WaTemplate[];
   /** Dar de baja (sale de todos los flujos, bot apagado) o quitar la baja. */
   setOptOut: (leadId: string, on: boolean) => Promise<void>;
+  /** QR de lonas y vendedores de la subcuenta activa. */
+  qrSources: QrSource[];
+  addQrSource: (name: string, assignedTo: string | null) => Promise<boolean>;
+  updateQrSource: (
+    id: string,
+    patch: Partial<Pick<QrSource, "name" | "assignedTo" | "active">>,
+  ) => Promise<void>;
+  deleteQrSource: (id: string) => Promise<void>;
 }
 
 const CrmContext = createContext<Ctx | null>(null);
@@ -125,6 +144,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
     members: [],
     notifications: [],
     templates: [],
+    qrSources: [],
     me: null,
   });
   const [activeId, setActiveId] = useState<string>("");
@@ -145,7 +165,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
 
   const reload = useCallback(async () => {
-    const [a, l, m, ap, fl, en, ma, mb, no, wt, se] = await Promise.all([
+    const [a, l, m, ap, fl, en, ma, mb, no, wt, qr, se] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at"),
       supabase.from("leads").select("*").order("created_at", { ascending: false }),
       supabase.from("messages").select("*").order("created_at").limit(5000),
@@ -164,6 +184,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         .order("created_at", { ascending: false })
         .limit(50),
       supabase.from("whatsapp_templates").select("*").order("name"),
+      supabase.from("qr_sources").select("*").order("created_at"),
       supabase.auth.getSession(),
     ]);
     const err =
@@ -211,6 +232,8 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         headerFormat: r.header_format as WaTemplate["headerFormat"],
         params: r.params ?? [],
       })),
+      // Sin la migración 0020 no hay QR: la pestaña "Lonas y QR" queda vacía.
+      qrSources: (qr.data ?? []).map(toQrSource),
       me: se.data.session?.user.id ?? null,
     });
     setLoading(false);
@@ -251,6 +274,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
             qualification_rules: next.qualificationRules,
             ai_model: next.aiModel,
             auto_pause_bot: next.autoPauseBot ?? true,
+            ...(patch.publicWhatsapp !== undefined
+              ? { public_whatsapp: patch.publicWhatsapp.replace(/\D/g, "").slice(0, 15) }
+              : {}),
             ...(patch.businessHours
               ? { business_hours: patch.businessHours as unknown as Json }
               : {}),
@@ -603,6 +629,51 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           ).error,
         );
         await reload();
+      },
+      qrSources: state.qrSources.filter((q) => q.accountId === account.id),
+      addQrSource: async (name, assignedTo) => {
+        // El código es corto: si choca con otro de la subcuenta, se intenta con uno nuevo.
+        for (let i = 0; i < 3; i++) {
+          const { data, error } = await supabase
+            .from("qr_sources")
+            .insert({
+              account_id: account.id,
+              name: name.trim().slice(0, 80),
+              code: newQrCode(),
+              assigned_to: assignedTo,
+            })
+            .select()
+            .single();
+          if (error?.code === "23505") continue;
+          if (error || !data) {
+            fail("crear el QR", error);
+            return false;
+          }
+          setState((s) => ({ ...s, qrSources: [...s.qrSources, toQrSource(data)] }));
+          return true;
+        }
+        toast.error("No se pudo crear el QR, intenta de nuevo");
+        return false;
+      },
+      updateQrSource: async (id, patch) => {
+        setState((s) => ({
+          ...s,
+          qrSources: s.qrSources.map((q) => (q.id === id ? { ...q, ...patch } : q)),
+        }));
+        const { error } = await supabase
+          .from("qr_sources")
+          .update({
+            ...(patch.name !== undefined ? { name: patch.name.trim().slice(0, 80) } : {}),
+            ...(patch.assignedTo !== undefined ? { assigned_to: patch.assignedTo } : {}),
+            ...(patch.active !== undefined ? { active: patch.active } : {}),
+          })
+          .eq("id", id);
+        fail("guardar el QR", error);
+        if (error) await reload();
+      },
+      deleteQrSource: async (id) => {
+        setState((s) => ({ ...s, qrSources: s.qrSources.filter((q) => q.id !== id) }));
+        fail("borrar el QR", (await supabase.from("qr_sources").delete().eq("id", id)).error);
       },
       assignLead: async (leadId, userId) => {
         setState((s) => ({

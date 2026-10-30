@@ -1,6 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { BusinessHours, Enrollment, Flow } from "./flows";
-import type { Account, Appointment, Lead, Member, Message } from "./types";
+import type { Account, Appointment, Lead, Member, Message, QrSource } from "./types";
 
 type T = Database["public"]["Tables"];
 export type AccountRow = T["accounts"]["Row"];
@@ -28,6 +28,7 @@ export const toAccount = (r: AccountRow): Account => ({
   !Array.isArray(r.business_hours)
     ? r.business_hours
     : {}) as BusinessHours,
+  publicWhatsapp: r.public_whatsapp ?? "",
 });
 
 export const toMember = (r: T["account_memberships"]["Row"]): Member => ({
@@ -67,6 +68,7 @@ export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
   aiSummary: r.ai_summary ?? null,
   optedOutAt: r.opted_out_at ?? null,
   optOutReason: r.opt_out_reason ?? null,
+  qrSourceId: r.qr_source_id ?? null,
   messages,
   createdAt: r.created_at,
 });
@@ -85,6 +87,16 @@ export const leadPatch = (l: Lead) => ({
   tags: l.tags,
   notes: l.notes,
   bot_active: l.botActive,
+});
+
+export const toQrSource = (r: T["qr_sources"]["Row"]): QrSource => ({
+  id: r.id,
+  accountId: r.account_id,
+  name: r.name,
+  code: r.code,
+  assignedTo: r.assigned_to,
+  active: r.active,
+  createdAt: r.created_at,
 });
 
 export const toAppointment = (r: AppointmentRow): Appointment => ({

@@ -661,4 +661,52 @@ INSERT INTO public.messages (lead_id, sender, body, wa_message_id)
 SELECT test_helpers.eq('lo que escribe desde el celular pausa el bot',
   (SELECT bot_active FROM public.leads WHERE id = 'c-imp'), false);
 
+-- ===== QR por lona (0020) =====
+SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
+SET ROLE authenticated;
+SELECT test_helpers.affects('owner crea un QR para su vendedor',
+  $$INSERT INTO public.qr_sources (account_id, name, code, assigned_to)
+    VALUES ('espacio-fx', 'Lona Vallarta', 'AB12', '33333333-3333-3333-3333-333333333333')$$, 1);
+SELECT test_helpers.denied('no asigna el QR a alguien fuera del equipo',
+  $$INSERT INTO public.qr_sources (account_id, name, code, assigned_to)
+    VALUES ('espacio-fx', 'Lona Centro', 'CD34', '22222222-2222-2222-2222-222222222222')$$);
+SELECT test_helpers.denied('no repite el código en la subcuenta',
+  $$INSERT INTO public.qr_sources (account_id, name, code) VALUES ('espacio-fx', 'Otra', 'AB12')$$);
+SELECT test_helpers.denied('el origen Simulador está reservado',
+  $$INSERT INTO public.qr_sources (account_id, name, code) VALUES ('espacio-fx', 'Simulador', 'EF56')$$);
+SELECT test_helpers.denied('no cambia el código de un QR impreso',
+  $$UPDATE public.qr_sources SET code = 'ZZ99'$$);
+SELECT test_helpers.affects('owner guarda el número público del negocio',
+  $$UPDATE public.accounts SET public_whatsapp = '523312345678' WHERE id = 'espacio-fx'$$, 1);
+SELECT test_helpers.denied('el número público sólo lleva dígitos',
+  $$UPDATE public.accounts SET public_whatsapp = '+52 33' WHERE id = 'espacio-fx'$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.affects('el equipo ve los QR de su cuenta', $$SELECT 1 FROM public.qr_sources$$, 1);
+SELECT test_helpers.denied('member no crea QR',
+  $$INSERT INTO public.qr_sources (account_id, name, code) VALUES ('espacio-fx', 'Mía', 'GH78')$$);
+SELECT test_helpers.no_rows('member no cambia QR', $$UPDATE public.qr_sources SET active = false$$);
+SELECT test_helpers.no_rows('member no borra QR', $$DELETE FROM public.qr_sources$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.eq('intruso: QR ajenos', (SELECT count(*) FROM public.qr_sources), 0::bigint);
+RESET ROLE;
+
+SET ROLE service_role;
+SELECT test_helpers.denied('un lead no apunta a un QR de otra subcuenta',
+  $$INSERT INTO public.leads (id, account_id, name, phone, qr_source_id)
+    SELECT 'qr-ajeno', 'mia', 'X', '+520000000000', id FROM public.qr_sources WHERE code = 'AB12'$$);
+SELECT test_helpers.affects('el webhook guarda el QR del lead',
+  $$INSERT INTO public.leads (id, account_id, name, phone, source, qr_source_id)
+    SELECT 'qr-lead', 'espacio-fx', 'Y', '+520000000001', name, id FROM public.qr_sources WHERE code = 'AB12'$$, 1);
+RESET ROLE;
+
+SET ROLE anon;
+SELECT test_helpers.denied('anon lee QR', $$SELECT * FROM public.qr_sources$$);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'
