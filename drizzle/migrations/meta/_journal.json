@@ -127,6 +127,13 @@
       "when": 1793329599573,
       "tag": "0017_0013_flow_advisor_handoff",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1793329624984,
+      "tag": "0018_0014_flow_whatsapp_rules",
+      "breakpoints": true
     }
   ]
 }
