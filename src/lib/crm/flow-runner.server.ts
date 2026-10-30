@@ -3,10 +3,33 @@ import type { Database } from "@/integrations/supabase/types";
 import { applyTag, moveToStage, removeTag } from "./automation";
 import { leadPatch, toAccount, toAppointment, toFlow, toLead } from "./db";
 import { dispatchMessage } from "./whatsapp.server";
-import { renderText, waitMs, type FlowStep, type Material } from "./flows";
+import {
+  END_NODE,
+  branchStart,
+  evaluateCondition,
+  flowGraph,
+  renderText,
+  resumeNode,
+  waitMs,
+  type FlowNode,
+  type FlowStep,
+  type Material,
+} from "./flows";
 
 type Sb = SupabaseClient<Database>;
 const MAX_STEPS = 20;
+
+/** Hora a la que termina una espera; null = se omite (sin cita o la hora ya pasó). */
+export function waitTarget(
+  st: Extract<FlowStep, { type: "wait" | "wait_appt" }>,
+  appt: { at: string } | undefined,
+  now: Date,
+): number | null {
+  if (st.type === "wait") return now.getTime() + waitMs(st.amount, st.unit);
+  if (!appt) return null;
+  const target = new Date(appt.at).getTime() - waitMs(st.amount, st.unit);
+  return target <= Date.now() ? null : target;
+}
 
 /** Ejecuta un enrollment hasta la siguiente espera. Reclama un candado para evitar dobles envíos. */
 export async function runEnrollment(sb: Sb, id: string, force = false): Promise<"ran" | "skipped"> {
@@ -59,12 +82,28 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
       url: m.url,
     }));
 
-    for (let i = enr.current_step, n = 0; i < flow.steps.length && n < MAX_STEPS; i++, n++) {
-      const st: FlowStep = flow.steps[i]!;
+    const graph = flowGraph(flow.steps);
+    let nodeId = resumeNode(graph, flow.steps, {
+      currentNode: enr.current_node,
+      currentStep: enr.current_step,
+    });
+    if (nodeId === undefined) {
+      await done({ status: "cancelled", cancel_reason: "El paso donde iba se eliminó del flujo" });
+      return "ran";
+    }
+    let executed = enr.current_step;
+    const advance = (next: string | null, patch: Record<string, unknown> = {}) =>
+      sb
+        .from("flow_enrollments")
+        .update({ current_node: next ?? END_NODE, current_step: ++executed, ...patch })
+        .eq("id", id);
+
+    for (let n = 0; nodeId && n < MAX_STEPS; n++) {
+      const { step: st, next }: FlowNode = graph.get(nodeId)!;
       // Anti-spam: si un trigger lo canceló mientras corría, parar.
       const { data: cur } = await sb
         .from("flow_enrollments")
-        .select("status")
+        .select("status, replied")
         .eq("id", id)
         .single();
       if (cur?.status !== "active") return "ran";
@@ -97,23 +136,38 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
               : moveToStage(lead, Number(st.value));
         const { error } = await sb.from("leads").update(leadPatch(lead)).eq("id", lead.id);
         if (error) throw error;
+      } else if (st.type === "condition") {
+        const ok = evaluateCondition(st.rule, {
+          lead,
+          replied: cur.replied,
+          hasAppointment: appt !== undefined,
+        });
+        nodeId = branchStart(st, next, ok);
+        await advance(nodeId);
+        continue;
+      } else if (st.type === "end") {
+        nodeId = null;
+        break;
       } else {
-        if (force && i === enr.current_step && st.type === "wait") continue;
-        let target = now.getTime() + waitMs(st.amount, st.unit);
-        if (st.type === "wait_appt") {
-          if (!appt) continue;
-          target = new Date(appt.at).getTime() - waitMs(st.amount, st.unit);
-          if (target <= Date.now()) continue;
+        const target = waitTarget(st, appt, now);
+        if (target != null && !(force && n === 0 && st.type === "wait")) {
+          await done({
+            current_node: next ?? END_NODE,
+            current_step: executed + 1,
+            next_run_at: new Date(target).toISOString(),
+          });
+          return "ran";
         }
-        await done({ current_step: i + 1, next_run_at: new Date(target).toISOString() });
-        return "ran";
       }
-      await sb
-        .from("flow_enrollments")
-        .update({ current_step: i + 1 })
-        .eq("id", id);
+      nodeId = next;
+      await advance(nodeId);
     }
-    await done({ status: "completed", current_step: flow.steps.length });
+    if (nodeId) {
+      // Quedan pasos sin esperas de por medio: seguir en el próximo tick.
+      await done({ next_run_at: new Date().toISOString() });
+      return "ran";
+    }
+    await done({ status: "completed", current_node: END_NODE });
     return "ran";
   } catch (e) {
     console.error("flow step failed", id, e);

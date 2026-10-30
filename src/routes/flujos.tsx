@@ -17,7 +17,7 @@ import {
 import { toast } from "sonner";
 import { useCrm } from "@/lib/crm/store";
 import { STAGES } from "@/lib/crm/types";
-import { FLOW_TEMPLATES, triggerLabel, type Flow, type Material } from "@/lib/crm/flows";
+import { FLOW_TEMPLATES, allSteps, triggerLabel, type Flow, type Material } from "@/lib/crm/flows";
 import { FlowEditor } from "@/components/crm/FlowEditor";
 import { AiFlowDialog, ImportFlowDialog } from "@/components/crm/FlowAiImport";
 import { exportFlow } from "@/lib/crm/flow-io";
@@ -148,7 +148,7 @@ function Flows() {
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold">{f.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {triggerLabel(f, stageName)} · {f.steps.length} pasos
+                    {triggerLabel(f, stageName)} · {allSteps(f.steps).length} pasos
                     {f.stopOnReply ? " · anti-spam" : ""}
                   </div>
                 </div>
@@ -208,6 +208,7 @@ function Flows() {
                       triggerType: t.triggerType,
                       triggerValue: t.triggerValue,
                       steps: t.steps(materials),
+                      stopOnReply: t.stopOnReply ?? true,
                       active: true,
                     },
                     isNew: true,

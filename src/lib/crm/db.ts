@@ -93,6 +93,7 @@ export const toEnrollment = (r: T["flow_enrollments"]["Row"]): Enrollment => ({
   accountId: r.account_id,
   status: r.status as Enrollment["status"],
   currentStep: r.current_step,
+  currentNode: r.current_node,
   nextRunAt: r.next_run_at,
   replied: r.replied,
   cancelReason: r.cancel_reason,

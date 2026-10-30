@@ -1,5 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { matchTriggers, renderText, waitMs, type Flow } from "./flows";
+import {
+  END_NODE,
+  allSteps,
+  branchStart,
+  evaluateCondition,
+  flowGraph,
+  matchTriggers,
+  renderText,
+  resumeNode,
+  waitMs,
+  type Flow,
+  type FlowStep,
+} from "./flows";
 import type { Account, Lead } from "./types";
 
 const lead = {
@@ -43,5 +55,53 @@ describe("flujos", () => {
     const f = flow({ triggerType: "tag", triggerValue: "calificando" });
     expect(matchTriggers([f], { stage: 1, tags: [] }, lead)).toHaveLength(1);
     expect(matchTriggers([{ ...f, active: false }], { stage: 1, tags: [] }, lead)).toHaveLength(0);
+  });
+});
+
+describe("ramas sí/no", () => {
+  const steps: FlowStep[] = [
+    { id: "a", type: "message", text: "", materialId: null },
+    {
+      id: "c",
+      type: "condition",
+      rule: { kind: "tag", tag: "caliente" },
+      yes: [{ id: "y", type: "end" }],
+      no: [],
+    },
+    { id: "z", type: "wait", amount: 1, unit: "day" },
+  ];
+  const g = flowGraph(steps);
+
+  it("al terminar una rama sigue el paso de después de la condición", () => {
+    expect(g.get("a")!.next).toBe("c");
+    expect(g.get("y")!.next).toBe("z");
+    expect(g.get("z")!.next).toBeNull();
+  });
+  it("una rama vacía salta directo al siguiente paso", () => {
+    const c = steps[1] as Extract<FlowStep, { type: "condition" }>;
+    expect(branchStart(c, "z", true)).toBe("y");
+    expect(branchStart(c, "z", false)).toBe("z");
+  });
+  it("cuenta los pasos de las ramas", () => expect(allSteps(steps)).toHaveLength(4));
+  it("retoma por id, por índice (inscripciones viejas) o detecta pasos borrados", () => {
+    expect(resumeNode(g, steps, { currentNode: "z", currentStep: 9 })).toBe("z");
+    expect(resumeNode(g, steps, { currentNode: null, currentStep: 1 })).toBe("c");
+    expect(resumeNode(g, steps, { currentNode: END_NODE, currentStep: 0 })).toBeNull();
+    expect(resumeNode(g, steps, { currentNode: "borrado", currentStep: 0 })).toBeUndefined();
+  });
+  it("evalúa etiqueta, etapa, datos, respuesta y cita", () => {
+    const ctx = { lead, replied: false, hasAppointment: true };
+    expect(evaluateCondition({ kind: "tag", tag: "calificando" }, ctx)).toBe(true);
+    expect(evaluateCondition({ kind: "tag", tag: "caliente" }, ctx)).toBe(false);
+    expect(evaluateCondition({ kind: "stage", op: "eq", stage: "2" }, ctx)).toBe(true);
+    expect(evaluateCondition({ kind: "stage", op: "gte", stage: "3" }, ctx)).toBe(false);
+    expect(
+      evaluateCondition({ kind: "field", field: "budget", op: "gte", value: 1_000_000 }, ctx),
+    ).toBe(true);
+    expect(
+      evaluateCondition({ kind: "field", field: "termMonths", op: "set", value: 0 }, ctx),
+    ).toBe(false);
+    expect(evaluateCondition({ kind: "replied" }, ctx)).toBe(false);
+    expect(evaluateCondition({ kind: "appointment" }, ctx)).toBe(true);
   });
 });

@@ -1,7 +1,21 @@
 import { useState } from "react";
 import { Play, Workflow, X } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
-import { unitLabel } from "@/lib/crm/flows";
+import { flowGraph, resumeNode, unitLabel, conditionLabel, type FlowStep } from "@/lib/crm/flows";
+import { STAGES } from "@/lib/crm/types";
+
+const stepLabel = (s: FlowStep) =>
+  s.type === "message"
+    ? "mensaje"
+    : s.type === "wait"
+      ? `esperar ${unitLabel(s.amount, s.unit)}`
+      : s.type === "wait_appt"
+        ? `${unitLabel(s.amount, s.unit)} antes de la cita`
+        : s.type === "action"
+          ? "acción"
+          : s.type === "condition"
+            ? conditionLabel(s.rule, (n) => STAGES[n]?.code ?? `P${n}`)
+            : "terminar";
 import { Button } from "@/components/ui/button";
 
 /** Flujo activo del lead + controles para probarlo. */
@@ -27,17 +41,15 @@ export function LeadFlows({ leadId, testMode }: { leadId: string; testMode?: boo
       )}
       {active.map((e) => {
         const f = flows.find((x) => x.id === e.flowId);
-        const prev = f?.steps[e.currentStep - 1];
-        const waiting =
-          prev && (prev.type === "wait" || prev.type === "wait_appt")
-            ? unitLabel(prev.amount, prev.unit)
-            : null;
+        const graph = f ? flowGraph(f.steps) : null;
+        const at = f && graph ? resumeNode(graph, f.steps, e) : null;
+        const upcoming = at ? graph?.get(at)?.step : undefined;
         return (
           <div key={e.id} className="mb-2 rounded-lg bg-primary/5 p-2 text-xs">
             <div className="font-semibold text-primary">{f?.name ?? "Flujo"}</div>
             <div className="text-muted-foreground">
-              Paso {Math.min(e.currentStep + 1, f?.steps.length ?? 0)} de {f?.steps.length ?? 0}
-              {waiting && ` · esperando ${waiting}`} · siguiente:{" "}
+              {e.currentStep} {e.currentStep === 1 ? "paso hecho" : "pasos hechos"}
+              {upcoming && ` · sigue: ${stepLabel(upcoming)}`} ·{" "}
               {new Date(e.nextRunAt).toLocaleString("es-MX", {
                 day: "numeric",
                 month: "short",

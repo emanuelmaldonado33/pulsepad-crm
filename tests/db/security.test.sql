@@ -289,4 +289,38 @@ SELECT test_helpers.eq('held no se reprocesa',
   public.claim_inbound_message('00000000-0000-0000-0000-00000000000d'), 'done'::text);
 RESET ROLE;
 
+-- ===== Ramas sí/no: cursor del grafo y "¿respondió?" =====
+SET ROLE service_role;
+INSERT INTO public.flows (id, account_id, name, stop_on_reply) VALUES
+  ('F-rama', 'espacio-fx', 'rama', false),
+  ('F-corta', 'espacio-fx', 'corta', true);
+INSERT INTO public.leads (id, account_id, name) VALUES ('r-lead', 'espacio-fx', 'Rama');
+INSERT INTO public.flow_enrollments (id, flow_id, lead_id, account_id) VALUES
+  ('E-rama', 'F-rama', 'r-lead', 'espacio-fx'),
+  ('E-corta', 'F-corta', 'r-lead', 'espacio-fx');
+SELECT test_helpers.eq('inscripción nueva sin cursor de grafo',
+  (SELECT current_node FROM public.flow_enrollments WHERE id = 'E-rama'), NULL::text);
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('r-lead', 'asesor', 'hola');
+SELECT test_helpers.eq('un asesor no cuenta como respuesta',
+  (SELECT replied FROM public.flow_enrollments WHERE id = 'E-rama'), false);
+SELECT test_helpers.eq('sin anti-spam sigue activa',
+  (SELECT status FROM public.flow_enrollments WHERE id = 'E-rama'), 'active'::text);
+SELECT test_helpers.eq('con anti-spam el asesor la cancela',
+  (SELECT cancel_reason FROM public.flow_enrollments WHERE id = 'E-corta'), 'Intervino un asesor'::text);
+INSERT INTO public.messages (lead_id, sender, body, ai_status) VALUES ('r-lead', 'lead', 'sí me interesa', 'processed');
+SELECT test_helpers.eq('el prospecto sí cuenta como respuesta',
+  (SELECT replied FROM public.flow_enrollments WHERE id = 'E-rama'), true);
+RESET ROLE;
+
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.no_rows('intruso mueve el cursor de un flujo ajeno',
+  $$UPDATE public.flow_enrollments SET current_node = 'x' WHERE id = 'E-rama'$$);
+RESET ROLE;
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.affects('member ve el cursor de su cuenta',
+  $$SELECT current_node FROM public.flow_enrollments WHERE id = 'E-rama'$$, 1);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'

@@ -1,20 +1,34 @@
-import { sid, type Flow, type FlowStep, type TriggerType, type WaitUnit } from "./flows";
+import {
+  FIELD_LABEL,
+  sid,
+  type ConditionRule,
+  type Flow,
+  type FlowStep,
+  type LeadNumberField,
+  type TriggerType,
+  type WaitUnit,
+} from "./flows";
 
 export const FLOW_FILE_VERSION = 1;
+export const MAX_BRANCH_DEPTH = 3;
 
 /** Formato portátil (sin ids de subcuenta). Los adjuntos viajan por nombre de material. */
 export function exportFlow(f: Flow, materialName: (id: string | null) => string | null) {
+  const out = (steps: FlowStep[]): unknown[] =>
+    steps.map(({ id: _id, ...s }) =>
+      s.type === "message"
+        ? { type: s.type, text: s.text, material: materialName(s.materialId) }
+        : s.type === "condition"
+          ? { type: s.type, rule: s.rule, yes: out(s.yes), no: out(s.no) }
+          : s,
+    );
   return {
     format: "nexo-crm-flow",
     version: FLOW_FILE_VERSION,
     name: f.name,
     trigger: { type: f.triggerType, value: f.triggerValue },
     stopOnReply: f.stopOnReply,
-    steps: f.steps.map(({ id: _id, ...s }) =>
-      s.type === "message"
-        ? { type: s.type, text: s.text, material: materialName(s.materialId) }
-        : s,
-    ),
+    steps: out(f.steps),
   };
 }
 
@@ -65,7 +79,6 @@ export function parseFlow(
 
   const rawSteps = o["steps"];
   if (!Array.isArray(rawSteps) || rawSteps.length === 0) throw new Error("El flujo no tiene pasos");
-  if (rawSteps.length > 50) throw new Error("Máximo 50 pasos por flujo");
   const findMat = (v: unknown) => {
     const s = str(v, 200).trim().toLowerCase();
     if (!s) return null;
@@ -77,34 +90,77 @@ export function parseFlow(
     );
   };
 
-  const steps: FlowStep[] = rawSteps.map((r, i) => {
-    const s = (r ?? {}) as Record<string, unknown>;
-    const type = str(s["type"], 20);
-    if (type === "message") {
-      const text = str(s["text"], 4000).trim();
-      if (!text) throw new Error(`El paso ${i + 1} es un mensaje vacío`);
-      return { id: sid(), type, text, materialId: findMat(s["material"] ?? s["materialId"]) };
+  let count = 0;
+  const parseRule = (v: unknown, at: string): ConditionRule => {
+    const r = (v ?? {}) as Record<string, unknown>;
+    const kind = str(r["kind"], 20);
+    if (kind === "replied" || kind === "appointment") return { kind };
+    if (kind === "tag") {
+      const tag = tagify(r["tag"] ?? r["value"]);
+      if (!tag) throw new Error(`La condición ${at} no indica la etiqueta`);
+      return { kind, tag };
     }
-    if (type === "wait" || type === "wait_appt") {
-      const amount = Math.max(1, Math.min(10_000, Math.round(Number(s["amount"]) || 1)));
-      return { id: sid(), type, amount, unit: unitOf(s["unit"]) };
+    if (kind === "stage") {
+      const stage = stageOf(r["stage"] ?? r["value"]);
+      if (stage == null) throw new Error(`La condición ${at} usa una etapa inválida`);
+      return { kind, op: r["op"] === "eq" ? "eq" : "gte", stage };
     }
-    if (type === "action") {
-      const action = str(s["action"], 20);
-      if (action === "set_stage") {
-        const v = stageOf(s["value"]);
-        if (v == null) throw new Error(`El paso ${i + 1} cambia a una etapa inválida`);
-        return { id: sid(), type, action, value: v };
+    if (kind === "field") {
+      const field = str(r["field"], 20) as LeadNumberField;
+      if (!(field in FIELD_LABEL)) throw new Error(`La condición ${at} usa un dato desconocido`);
+      const op = r["op"] === "gte" || r["op"] === "lte" ? r["op"] : "set";
+      const value = Math.max(0, Number(r["value"]) || 0);
+      return { kind, field, op, value };
+    }
+    throw new Error(`La condición ${at} es de un tipo desconocido («${kind}»)`);
+  };
+  const parseSteps = (list: unknown, depth: number, prefix: string): FlowStep[] => {
+    if (list == null) return [];
+    if (!Array.isArray(list)) throw new Error(`Las ramas del paso ${prefix} deben ser listas`);
+    return list.map((r, idx) => {
+      const at = prefix ? `${prefix}.${idx + 1}` : String(idx + 1);
+      if (++count > 50) throw new Error("Máximo 50 pasos por flujo");
+      const s = (r ?? {}) as Record<string, unknown>;
+      const type = str(s["type"], 20);
+      if (type === "message") {
+        const text = str(s["text"], 4000).trim();
+        if (!text) throw new Error(`El paso ${at} es un mensaje vacío`);
+        return { id: sid(), type, text, materialId: findMat(s["material"] ?? s["materialId"]) };
       }
-      if (action === "add_tag" || action === "remove_tag") {
-        const v = tagify(s["value"]);
-        if (!v) throw new Error(`El paso ${i + 1} no indica la etiqueta`);
-        return { id: sid(), type, action, value: v };
+      if (type === "wait" || type === "wait_appt") {
+        const amount = Math.max(1, Math.min(10_000, Math.round(Number(s["amount"]) || 1)));
+        return { id: sid(), type, amount, unit: unitOf(s["unit"]) };
       }
-      throw new Error(`El paso ${i + 1} tiene una acción desconocida`);
-    }
-    throw new Error(`El paso ${i + 1} tiene un tipo desconocido («${type}»)`);
-  });
+      if (type === "action") {
+        const action = str(s["action"], 20);
+        if (action === "set_stage") {
+          const v = stageOf(s["value"]);
+          if (v == null) throw new Error(`El paso ${at} cambia a una etapa inválida`);
+          return { id: sid(), type, action, value: v };
+        }
+        if (action === "add_tag" || action === "remove_tag") {
+          const v = tagify(s["value"]);
+          if (!v) throw new Error(`El paso ${at} no indica la etiqueta`);
+          return { id: sid(), type, action, value: v };
+        }
+        throw new Error(`El paso ${at} tiene una acción desconocida`);
+      }
+      if (type === "condition") {
+        if (depth >= MAX_BRANCH_DEPTH)
+          throw new Error(`Máximo ${MAX_BRANCH_DEPTH} condiciones una dentro de otra`);
+        return {
+          id: sid(),
+          type,
+          rule: parseRule(s["rule"] ?? s["if"], at),
+          yes: parseSteps(s["yes"], depth + 1, `${at}.sí`),
+          no: parseSteps(s["no"], depth + 1, `${at}.no`),
+        };
+      }
+      if (type === "end") return { id: sid(), type };
+      throw new Error(`El paso ${at} tiene un tipo desconocido («${type}»)`);
+    });
+  };
+  const steps = parseSteps(rawSteps, 0, "");
 
   return {
     id: "",
