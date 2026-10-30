@@ -17,6 +17,9 @@ import {
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WhatsAppChannel } from "@/components/crm/WhatsAppChannel";
+import { Switch } from "@/components/ui/switch";
+import type { Member } from "@/lib/crm/types";
+import { DEFAULT_TZ, WEEKDAYS, hoursConfigured, type BusinessHours } from "@/lib/crm/flows";
 
 export const Route = createFileRoute("/configuracion")({
   head: () => ({
@@ -64,12 +67,20 @@ function Config() {
         <TabsList>
           <TabsTrigger value="ia">IA y marca</TabsTrigger>
           <TabsTrigger value="whatsapp">Canal WhatsApp</TabsTrigger>
+          <TabsTrigger value="equipo">Equipo</TabsTrigger>
+          <TabsTrigger value="horario">Horario hábil</TabsTrigger>
         </TabsList>
         <TabsContent value="ia">
           <AiConfig />
         </TabsContent>
         <TabsContent value="whatsapp" className="mt-4">
           <WhatsAppChannel key={account.id} accountId={account.id} />
+        </TabsContent>
+        <TabsContent value="equipo" className="mt-4">
+          <TeamConfig key={account.id} />
+        </TabsContent>
+        <TabsContent value="horario" className="mt-4">
+          <HoursConfig key={account.id} />
         </TabsContent>
       </Tabs>
     </div>
@@ -284,5 +295,245 @@ function AiConfig() {
         </div>
       </section>
     </div>
+  );
+}
+
+const ROLE_LABEL: Record<Member["role"], string> = {
+  owner: "Propietario",
+  admin: "Administrador",
+  member: "Asesor",
+};
+
+/** Equipo: nombre, WhatsApp personal para avisos y disponibilidad para los turnos. */
+function TeamConfig() {
+  const { account, updateAccount, members, me, updateMember } = useCrm();
+  const isAdmin = members.some(
+    (m) => m.userId === me && (m.role === "owner" || m.role === "admin"),
+  );
+  return (
+    <div className="space-y-4">
+      <section className="space-y-3 rounded-2xl border bg-card p-5">
+        <h2 className="font-semibold">Equipo de {account.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          Los flujos usan estos datos en «Avisar al equipo» y «Asignar asesor». Quien esté marcado
+          como no disponible no recibe leads por turnos. Cada quien edita sus datos; propietarios y
+          administradores, los de todo el equipo.
+        </p>
+        <div className="divide-y">
+          {members.map((m) => (
+            <MemberRow
+              key={m.userId}
+              m={m}
+              editable={m.userId === me || isAdmin}
+              onSave={(patch) => updateMember(m.userId, patch)}
+            />
+          ))}
+        </div>
+      </section>
+      <section className="flex items-start gap-3 rounded-2xl border bg-card p-5">
+        <div className="flex-1">
+          <h2 className="font-semibold">Pausar el bot cuando un asesor escribe</h2>
+          <p className="text-sm text-muted-foreground">
+            Si un asesor manda un mensaje manual a un lead, el bot deja de responderle y queda
+            anotado en su historial. Se vuelve a encender desde la bandeja o con un flujo.
+          </p>
+        </div>
+        <Switch
+          aria-label="Pausar el bot cuando un asesor escribe"
+          disabled={!isAdmin}
+          checked={account.autoPauseBot ?? true}
+          onCheckedChange={(v) => void updateAccount(account.id, { autoPauseBot: v })}
+        />
+      </section>
+    </div>
+  );
+}
+
+function MemberRow({
+  m,
+  editable,
+  onSave,
+}: {
+  m: Member;
+  editable: boolean;
+  onSave: (patch: Partial<Pick<Member, "name" | "whatsappPhone" | "available">>) => Promise<void>;
+}) {
+  const [name, setName] = useState(m.name);
+  const [phone, setPhone] = useState(m.whatsappPhone);
+  const validPhone = /^\+?[0-9 ()-]{0,25}$/.test(phone);
+  const dirty = name !== m.name || phone !== m.whatsappPhone;
+  return (
+    <div className="flex flex-wrap items-center gap-3 py-3">
+      <div className="min-w-40 flex-1">
+        <Input
+          aria-label="Nombre"
+          value={name}
+          disabled={!editable}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <div className="mt-1 text-xs text-muted-foreground">{ROLE_LABEL[m.role]}</div>
+      </div>
+      <div className="min-w-48 flex-1">
+        <Input
+          aria-label="WhatsApp personal"
+          value={phone}
+          disabled={!editable}
+          placeholder="+52 55 1234 5678"
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        {!validPhone && <div className="mt-1 text-xs text-destructive">Sólo números</div>}
+      </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Switch
+          aria-label="Disponible"
+          disabled={!editable}
+          checked={m.available}
+          onCheckedChange={(v) => void onSave({ available: v })}
+        />
+        Disponible
+      </label>
+      {editable && (
+        <Button
+          size="sm"
+          disabled={!dirty || !validPhone || !name.trim()}
+          onClick={() => void onSave({ name: name.trim(), whatsappPhone: phone.trim() })}
+        >
+          <Save className="mr-1 h-3.5 w-3.5" /> Guardar
+        </Button>
+      )}
+    </div>
+  );
+}
+
+const TIMEZONES = [
+  ["America/Mexico_City", "Ciudad de México"],
+  ["America/Monterrey", "Monterrey"],
+  ["America/Cancun", "Cancún"],
+  ["America/Chihuahua", "Chihuahua"],
+  ["America/Hermosillo", "Hermosillo"],
+  ["America/Tijuana", "Tijuana"],
+  ["America/Bogota", "Bogotá"],
+  ["America/Lima", "Lima"],
+  ["America/Santiago", "Santiago"],
+  ["America/Argentina/Buenos_Aires", "Buenos Aires"],
+  ["America/New_York", "Nueva York"],
+  ["Europe/Madrid", "Madrid"],
+] as const;
+
+const WEEKDAY_HOURS: BusinessHours = {
+  tz: DEFAULT_TZ,
+  days: [
+    null,
+    ["09:00", "19:00"],
+    ["09:00", "19:00"],
+    ["09:00", "19:00"],
+    ["09:00", "19:00"],
+    ["09:00", "19:00"],
+    ["10:00", "14:00"],
+  ],
+};
+
+/** Días y horas en que los flujos pueden enviar los mensajes marcados «solo en horario hábil». */
+function HoursConfig() {
+  const { account, updateAccount, members, me } = useCrm();
+  const isAdmin = members.some(
+    (m) => m.userId === me && (m.role === "owner" || m.role === "admin"),
+  );
+  const [h, setH] = useState<BusinessHours>(
+    hoursConfigured(account.businessHours) ? account.businessHours : WEEKDAY_HOURS,
+  );
+  const days = [0, 1, 2, 3, 4, 5, 6].map((d) => h.days?.[d] ?? null);
+  const setDay = (d: number, v: readonly [string, string] | null) =>
+    setH({ ...h, days: days.map((x, i) => (i === d ? v : x)) });
+  const invalid = days.some((d) => d && d[1] <= d[0]);
+  return (
+    <section className="space-y-4 rounded-2xl border bg-card p-5">
+      <div>
+        <h2 className="font-semibold">Horario hábil de {account.name}</h2>
+        <p className="text-sm text-muted-foreground">
+          Los mensajes de un flujo marcados «solo en horario hábil» que caigan fuera de este horario
+          esperan a la siguiente apertura.{" "}
+          {hoursConfigured(account.businessHours)
+            ? ""
+            : "Aún no está guardado: mientras tanto esos mensajes salen a cualquier hora."}
+        </p>
+      </div>
+      <label className="flex flex-wrap items-center gap-2 text-sm">
+        Zona horaria
+        <select
+          className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+          value={h.tz ?? DEFAULT_TZ}
+          disabled={!isAdmin}
+          onChange={(e) => setH({ ...h, tz: e.target.value })}
+        >
+          {TIMEZONES.map(([tz, label]) => (
+            <option key={tz} value={tz}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="divide-y">
+        {WEEKDAYS.map((name, d) => {
+          const span = days[d];
+          return (
+            <div key={name} className="flex flex-wrap items-center gap-3 py-2 text-sm">
+              <Switch
+                aria-label={`Abierto el ${name.toLowerCase()}`}
+                disabled={!isAdmin}
+                checked={!!span}
+                onCheckedChange={(v) => setDay(d, v ? ["09:00", "19:00"] : null)}
+              />
+              <span className="w-24">{name}</span>
+              {span ? (
+                <>
+                  <Input
+                    type="time"
+                    aria-label={`Abre el ${name.toLowerCase()}`}
+                    className="w-32"
+                    disabled={!isAdmin}
+                    value={span[0]}
+                    onChange={(e) => setDay(d, [e.target.value, span[1]])}
+                  />
+                  a
+                  <Input
+                    type="time"
+                    aria-label={`Cierra el ${name.toLowerCase()}`}
+                    className="w-32"
+                    disabled={!isAdmin}
+                    value={span[1]}
+                    onChange={(e) => setDay(d, [span[0], e.target.value])}
+                  />
+                </>
+              ) : (
+                <span className="text-muted-foreground">Cerrado</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {invalid && (
+        <p className="text-xs text-destructive">
+          La hora de cierre debe ser después de la apertura.
+        </p>
+      )}
+      <div className="flex items-center gap-3">
+        <Button
+          disabled={!isAdmin || invalid || !days.some(Boolean)}
+          onClick={async () => {
+            await updateAccount(account.id, { businessHours: { tz: h.tz ?? DEFAULT_TZ, days } });
+            toast.success("Horario guardado");
+          }}
+        >
+          <Save className="mr-2 h-4 w-4" /> Guardar horario
+        </Button>
+        {!isAdmin && (
+          <span className="text-xs text-muted-foreground">
+            Solo propietarios y administradores cambian el horario.
+          </span>
+        )}
+      </div>
+    </section>
   );
 }

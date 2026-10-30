@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 const MAX_BODY_BYTES = 1_000_000;
+const mediaSchema = z
+  .object({ id: z.string().min(1).max(250), caption: z.string().max(3000).optional() })
+  .passthrough();
 const payloadSchema = z
   .object({
     entry: z
@@ -30,7 +33,25 @@ const payloadSchema = z
                           id: z.string().min(1).max(250),
                           type: z.string().min(1).max(80),
                           text: z.object({ body: z.string().max(10000) }).optional(),
+                          // Anuncio de clic a WhatsApp que abrió la conversación.
+                          referral: z
+                            .object({
+                              source_type: z.string().max(40).optional(),
+                              source_id: z.string().max(100).optional(),
+                              headline: z.string().max(500).optional(),
+                              ctwa_clid: z.string().max(500).optional(),
+                            })
+                            .passthrough()
+                            .optional(),
                           button: z.object({ text: z.string().max(2000) }).optional(),
+                          // Archivos: se transcriben (voz) o se describen (foto) antes de guardar.
+                          audio: mediaSchema.optional(),
+                          image: mediaSchema.optional(),
+                          video: mediaSchema.optional(),
+                          document: mediaSchema
+                            .extend({ filename: z.string().max(500).optional() })
+                            .optional(),
+                          sticker: mediaSchema.optional(),
                           interactive: z
                             .object({
                               button_reply: z.object({ title: z.string().max(2000) }).optional(),
@@ -111,6 +132,20 @@ const textOf = (
   m.interactive?.list_reply?.title ??
   `[${m.type} recibido]`;
 
+type Referral = NonNullable<
+  z.infer<typeof payloadSchema>["entry"][number]["changes"][number]["value"]["messages"]
+>[number]["referral"];
+
+/** Datos del anuncio para el lead nuevo; inscribe los flujos «Lead nuevo de anuncio». */
+const adOf = (r: Referral) =>
+  r && (r.source_id || r.ctwa_clid || r.headline)
+    ? {
+        ad_id: r.source_id?.slice(0, 100) || null,
+        ad_name: r.headline?.trim().slice(0, 200) || null,
+        ctwa_clid: r.ctwa_clid?.slice(0, 500) || null,
+      }
+    : {};
+
 export const Route = createFileRoute("/api/public/whatsapp/webhook")({
   server: {
     handlers: {
@@ -150,8 +185,11 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
+        const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
+        const { mediaOf, mediaToText } = await import("@/lib/crm/media.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
+        const leadsWithNews = new Set<string>();
 
         // 1) Guardar cada mensaje una sola vez. Sólo un fallo al guardar responde 500 para
         //    que Meta reintente; la IA nunca bloquea la respuesta a Meta.
@@ -177,12 +215,13 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
             for (const m of v.messages) {
               const { data: existing, error: existingError } = await sb
                 .from("messages")
-                .select("id")
+                .select("id, lead_id")
                 .eq("wa_message_id", m.id)
                 .maybeSingle();
               if (existingError) return new Response("Temporary failure", { status: 500 });
               if (existing) {
                 toProcess.push(existing.id);
+                if (existing.lead_id) leadsWithNews.add(existing.lead_id);
                 continue;
               }
 
@@ -205,6 +244,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                     name,
                     phone: `+${m.from}`,
                     source: "WhatsApp",
+                    ...adOf(m.referral),
                   })
                   .select("id")
                   .single();
@@ -214,7 +254,12 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                 }
                 leadId = created.id;
               }
-              const body = textOf(m).slice(0, 2000);
+              // Notas de voz y fotos se guardan ya como texto: así las leen la IA, las
+              // palabras clave de los flujos (trigger al insertar) y el asesor.
+              const media = mediaOf(m);
+              const body = (
+                media && !m.text ? await mediaToText(media, ch.access_token) : textOf(m)
+              ).slice(0, 2000);
               const { data: inserted, error: insertError } = await sb
                 .from("messages")
                 .insert({
@@ -242,6 +287,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                 return new Response("Temporary failure", { status: 500 });
               }
               toProcess.push(inserted.id);
+              leadsWithNews.add(leadId);
             }
           }
 
@@ -255,6 +301,15 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               "webhook AI processing failed",
               e instanceof Error ? e.message : "unknown error",
             );
+          }
+        }
+        // 3) Correr ya los flujos que dispararon estos mensajes (respuesta, palabra clave o
+        //    intención). Lo que falle aquí lo retoma el cron de flows-tick.
+        for (const leadId of leadsWithNews) {
+          try {
+            await runDueForLead(sb, leadId);
+          } catch (e) {
+            console.error("webhook flow run failed", e instanceof Error ? e.message : e);
           }
         }
         return new Response("OK");

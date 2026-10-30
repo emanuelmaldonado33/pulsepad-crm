@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { STAGES } from "./types";
 import { TAG_RULES } from "./automation";
-import { VARIABLES } from "./flows";
+import { LEAD_INTENTS, MESSAGE_INTENTS, VARIABLES } from "./flows";
 import { extractJson } from "./flow-io";
 
 /** Pide a Claude un borrador de flujo en JSON. La validación final ocurre en el cliente con parseFlow. */
@@ -31,21 +31,45 @@ Diseñas flujos para la subcuenta «${acc.name}» que vende: ${acc.product || "(
 Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
 {
   "name": string,
-  "trigger": { "type": "new_lead" | "stage" | "tag", "value": string },   // stage: "0".."7"; tag: etiqueta-en-minusculas; new_lead: ""
+  "trigger": Disparador,
+  "allowReentry": boolean,   // false = un lead que ya pasó por el flujo no vuelve a entrar (recomendado en disparadores de conversación)
   "stopOnReply": true,
   "steps": [
-    { "type": "message", "text": string, "material": string | null },   // material = nombre EXACTO de la biblioteca o null
+    { "type": "message", "text": string, "material": string | null, "businessHours": boolean },   // material = nombre EXACTO de la biblioteca o null; businessHours = esperar a horario hábil (recomendado en seguimientos)
     { "type": "wait", "amount": number, "unit": "min" | "hour" | "day" },
     { "type": "wait_appt", "amount": number, "unit": "min" | "hour" | "day" },   // espera hasta X antes de la próxima cita
-    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage", "value": string }
+    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off" | "exit_flows" | "opt_out", "value": string },   // bot_on/bot_off/exit_flows (sacar de los demás flujos)/opt_out (dar de baja): value ""
+    { "type": "assign", "mode": "round_robin", "userIds": [] },   // asigna un asesor por turnos entre todo el equipo disponible
+    { "type": "notify", "to": ["assigned" | "admins"], "text": string, "whatsapp": boolean },   // aviso interno al equipo con resumen de la IA y enlace al chat
+    { "type": "condition", "rule": Regla, "yes": [pasos], "no": [pasos] },   // rama sí/no; al terminar la rama sigue el paso de abajo
+    { "type": "end" }   // termina el flujo para ese lead
   ]
 }
+Disparador = { "type": "new_lead", "value": "" }
+      | { "type": "stage", "value": "0".."7" }
+      | { "type": "tag", "value": etiqueta-en-minusculas }
+      | { "type": "reply", "value": "", "config": Filtro }   // cada mensaje del lead
+      | { "type": "keyword", "value": "", "config": { "keywords": [string], ...Filtro } }   // palabras o frases completas, sin importar acentos
+      | { "type": "intent", "value": "", "config": { "intents": [${Object.keys(MESSAGE_INTENTS)
+        .map((i) => `"${i}"`)
+        .join(" | ")}], ...Filtro } }   // la IA clasifica cada mensaje
+      | { "type": "ad_lead", "value": texto que contiene el nombre del anuncio o "" }
+      | { "type": "qualification", "value": ${Object.keys(LEAD_INTENTS)
+        .map((i) => `"${i}"`)
+        .join(" | ")} | "" }
+Filtro = { "stage"?: 0..7, "tag"?: string }   // opcional: solo leads en esa etapa o con esa etiqueta
+Regla = { "kind": "replied" }   // respondió desde que entró al flujo (requiere "stopOnReply": false)
+      | { "kind": "tag", "tag": string }
+      | { "kind": "stage", "op": "eq" | "gte", "stage": "0".."7" }
+      | { "kind": "field", "field": "budget" | "downPayment" | "termMonths", "op": "set" | "gte" | "lte", "value": number }
+      | { "kind": "advisor_replied" }   // un asesor le escribió desde que entró al flujo (para escalar tras una espera; requiere "stopOnReply": false)
+      | { "kind": "appointment" }   // tiene cita programada
 
 Etapas: ${STAGES.map((s, i) => `${i}=${s.code} ${s.name}`).join("; ")}.
 Etiquetas con efecto automático: ${Object.keys(TAG_RULES).join(", ")}.
 Variables disponibles en mensajes: ${VARIABLES.map((v) => `{{${v}}}`).join(", ")}. Usa {{nombre}} para personalizar.
 Biblioteca de materiales: ${(mats ?? []).map((m) => `«${m.name}» (${m.kind})`).join(", ") || "vacía (usa material null)"}.
-Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con una pregunta clara al final. Separa los días con pasos "wait". No inventes enlaces. Máximo 20 pasos.`;
+Reglas: mensajes breves, cálidos, en español mexicano, estilo WhatsApp, con una pregunta clara al final. Separa los días con pasos "wait". No inventes enlaces. Máximo 20 pasos en total. Usa condiciones solo cuando aporten (p. ej. insistir solo si no respondió); máximo 3 niveles de condiciones.`;
 
     const { draftFlowWithClaude, FLOW_AI_MODEL } = await import("./flow-ai.server");
     let out;

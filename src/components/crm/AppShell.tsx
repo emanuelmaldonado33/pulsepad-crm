@@ -2,6 +2,7 @@ import { Link, useLocation } from "@tanstack/react-router";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { ThemeToggle } from "./ThemeToggle";
 import { NewAccountDialog } from "./NewAccountDialog";
+import { NotificationBell } from "./NotificationBell";
 import {
   CalendarDays,
   FlaskConical,
@@ -154,7 +155,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             </DropdownMenu>
           </div>
 
-          <ThemeToggle className="ml-auto md:ml-0" />
+          <span aria-hidden className="ml-auto" />
+          <NotificationBell />
+          <ThemeToggle />
           <Button
             variant="ghost"
             size="sm"

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import { money, termLabel, useCrm } from "@/lib/crm/store";
 import { STAGES, type Lead } from "@/lib/crm/types";
 import { TAG_RULES, applyTag, removeTag } from "@/lib/crm/automation";
@@ -52,7 +53,7 @@ function NumField({
 }
 
 export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean }) {
-  const { updateLead, account } = useCrm();
+  const { updateLead, account, members, assignLead, setOptOut } = useCrm();
   const quick = Array.from(new Set([...Object.keys(TAG_RULES), ...account.standardTags])).filter(
     (t) => !lead.tags.includes(t),
   );
@@ -83,6 +84,49 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         </div>
       </div>
 
+      {lead.optedOutAt ? (
+        <section className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <div className="font-semibold text-destructive">Dado de baja</div>
+          <p className="text-xs text-muted-foreground">
+            No recibe mensajes automáticos ni entra a flujos
+            {lead.optOutReason ? ` (${lead.optOutReason})` : ""}. Un asesor todavía puede escribirle
+            a mano si el lead vuelve a escribir.
+          </p>
+          {!readOnly && (
+            <button
+              type="button"
+              className="mt-2 text-xs font-semibold text-primary hover:underline"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "¿Quitar la baja? El lead podrá volver a recibir mensajes automáticos.",
+                  )
+                )
+                  void setOptOut(lead.id, false);
+              }}
+            >
+              Quitar la baja
+            </button>
+          )}
+        </section>
+      ) : (
+        !readOnly && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-destructive hover:underline"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "¿Dar de baja a este lead? Sale de todos los flujos y el bot se apaga.",
+                )
+              )
+                void setOptOut(lead.id, true);
+            }}
+          >
+            Dar de baja (no enviar mensajes automáticos)
+          </button>
+        )
+      )}
       <section className="rounded-xl border border-primary/15 bg-primary/[0.035] p-3">
         <div className="text-xs font-semibold text-primary">Siguiente paso sugerido</div>
         <p className="mt-1 text-sm leading-relaxed">{nextStepSuggestion(lead)}</p>
@@ -126,7 +170,42 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         )}
       </section>
 
+      <section className="rounded-xl border bg-card p-3">
+        <label className="block">
+          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+            Asesor asignado
+          </span>
+          {readOnly ? (
+            <div className="text-sm">
+              {members.find((m) => m.userId === lead.assignedTo)?.name ?? "Sin asignar"}
+            </div>
+          ) : (
+            <select
+              className="mt-1 h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+              value={lead.assignedTo ?? ""}
+              onChange={(e) => void assignLead(lead.id, e.target.value || null)}
+            >
+              <option value="">Sin asignar</option>
+              {members.map((m) => (
+                <option key={m.userId} value={m.userId}>
+                  {m.name}
+                  {m.available ? "" : " (no disponible)"}
+                </option>
+              ))}
+            </select>
+          )}
+        </label>
+        {lead.aiSummary && (
+          <p className="mt-2 whitespace-pre-line text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">Resumen IA: </span>
+            {lead.aiSummary}
+          </p>
+        )}
+      </section>
+
       <LeadFlows leadId={lead.id} testMode={!!readOnly} />
+
+      <LeadHistory leadId={lead.id} />
 
       <section>
         <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -201,5 +280,46 @@ function Kv({ k, v }: { k: string; v: string }) {
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</div>
       <div className="font-display text-sm font-semibold">{v}</div>
     </div>
+  );
+}
+
+/** Historial del lead: bot pausado, asignaciones y avisos (lead_events). */
+function LeadHistory({ leadId }: { leadId: string }) {
+  const [events, setEvents] = useState<{ id: string; body: string; created_at: string }[]>([]);
+  useEffect(() => {
+    let live = true;
+    void supabase
+      .from("lead_events")
+      .select("id, body, created_at")
+      .eq("lead_id", leadId)
+      .order("created_at", { ascending: false })
+      .limit(10)
+      .then(({ data }) => live && setEvents(data ?? []));
+    return () => {
+      live = false;
+    };
+  }, [leadId]);
+  if (!events.length) return null;
+  return (
+    <section>
+      <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+        Historial
+      </div>
+      <ul className="space-y-1 text-xs">
+        {events.map((e) => (
+          <li key={e.id} className="flex gap-2">
+            <span className="shrink-0 text-muted-foreground" suppressHydrationWarning>
+              {new Date(e.created_at).toLocaleString("es-MX", {
+                day: "numeric",
+                month: "short",
+                hour: "2-digit",
+                minute: "2-digit",
+              })}
+            </span>
+            <span>{e.body}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }

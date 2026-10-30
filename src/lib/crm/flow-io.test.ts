@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { exportFlow, extractJson, parseFlow } from "./flow-io";
-import type { Flow } from "./flows";
+import { exportFlow, extractJson, parseFlow, parseTriggerConfig } from "./flow-io";
+import type { Flow, FlowStep } from "./flows";
 
 const mats = [{ id: "m1", name: "Video de avances" }];
 
@@ -13,6 +13,8 @@ describe("importar/exportar flujos", () => {
       active: true,
       triggerType: "stage",
       triggerValue: "2",
+      triggerConfig: {},
+      allowReentry: true,
       stopOnReply: true,
       steps: [
         { id: "1", type: "message", text: "Hola {{nombre}}", materialId: "m1" },
@@ -46,7 +48,216 @@ describe("importar/exportar flujos", () => {
     expect(() => parseFlow({ steps: [] }, "a", [])).toThrow();
     expect(() => parseFlow({ steps: [{ type: "email" }] }, "a", [])).toThrow();
   });
+  it("ida y vuelta conserva condiciones y ramas", () => {
+    const f = parseFlow(
+      {
+        stopOnReply: false,
+        steps: [
+          {
+            type: "condition",
+            rule: { kind: "replied" },
+            yes: [{ type: "end" }],
+            no: [
+              { type: "message", text: "¿Sigues ahí?", material: "Video de avances" },
+              {
+                type: "condition",
+                rule: { kind: "stage", op: "gte", stage: "P4" },
+                yes: [],
+                no: [{ type: "action", action: "add_tag", value: "#Frío" }],
+              },
+            ],
+          },
+        ],
+      },
+      "a",
+      mats,
+    );
+    expect(f.stopOnReply).toBe(false);
+    const back = parseFlow(
+      JSON.parse(
+        JSON.stringify(exportFlow(f, (id) => mats.find((m) => m.id === id)?.name ?? null)),
+      ),
+      "a",
+      mats,
+    );
+    const c = back.steps[0] as Extract<FlowStep, { type: "condition" }>;
+    expect(c.yes.map((s) => s.type)).toEqual(["end"]);
+    expect(c.no[0]).toMatchObject({ materialId: "m1" });
+    expect(c.no[1]).toMatchObject({ rule: { kind: "stage", op: "gte", stage: "4" } });
+    expect((c.no[1] as typeof c).no[0]).toMatchObject({ value: "frío" });
+  });
+  it("rechaza condiciones inválidas o demasiado anidadas", () => {
+    const cond = (rule: unknown, no: unknown[] = []) => ({ type: "condition", rule, yes: [], no });
+    expect(() => parseFlow({ steps: [cond({ kind: "tag", tag: "" })] }, "a", [])).toThrow(
+      /etiqueta/,
+    );
+    expect(() => parseFlow({ steps: [cond({ kind: "clima" })] }, "a", [])).toThrow(/desconocido/);
+    const r = { kind: "replied" };
+    expect(() => parseFlow({ steps: [cond(r, [cond(r, [cond(r, [cond(r)])])])] }, "a", [])).toThrow(
+      /Máximo 3/,
+    );
+  });
+  it("el límite de 50 pasos cuenta los de las ramas", () => {
+    const many = Array.from({ length: 30 }, () => ({ type: "wait", amount: 1, unit: "h" }));
+    expect(() =>
+      parseFlow(
+        { steps: [{ type: "condition", rule: { kind: "replied" }, yes: many, no: many }] },
+        "a",
+        [],
+      ),
+    ).toThrow(/50/);
+  });
   it("extrae JSON de un bloque ```json", () => {
     expect(extractJson('Aquí está:\n```json\n{"a":1}\n```')).toEqual({ a: 1 });
+  });
+});
+
+describe("disparadores de conversación en JSON", () => {
+  it("ida y vuelta conserva palabras clave, filtro y reingreso", () => {
+    const f = parseFlow(
+      {
+        trigger: {
+          type: "keyword",
+          config: { keywords: [" precio ", "precio", "cotización", ""], stage: "P2", tag: "#VIP" },
+        },
+        allowReentry: false,
+        steps: [{ type: "end" }],
+      },
+      "a",
+      [],
+    );
+    expect(f.triggerType).toBe("keyword");
+    expect(f.triggerConfig).toEqual({ keywords: ["precio", "cotización"], stage: 2, tag: "vip" });
+    expect(f.allowReentry).toBe(false);
+    const back = parseFlow(JSON.parse(JSON.stringify(exportFlow(f, () => null))), "b", []);
+    expect(back.triggerConfig).toEqual(f.triggerConfig);
+    expect(back.allowReentry).toBe(false);
+  });
+  it("descarta intenciones desconocidas y exige al menos una", () => {
+    const f = parseFlow(
+      {
+        trigger: { type: "intent", config: { intents: ["pide_precio", "hackear"] } },
+        steps: [{ type: "end" }],
+      },
+      "a",
+      [],
+    );
+    expect(f.triggerConfig).toEqual({ intents: ["pide_precio"] });
+    expect(() =>
+      parseFlow(
+        { trigger: { type: "intent", config: { intents: ["x"] } }, steps: [{ type: "end" }] },
+        "a",
+        [],
+      ),
+    ).toThrow(/intención/);
+    expect(() =>
+      parseFlow({ trigger: { type: "keyword" }, steps: [{ type: "end" }] }, "a", []),
+    ).toThrow(/palabras/);
+  });
+  it("los disparadores de lead no guardan filtros de conversación", () => {
+    expect(parseTriggerConfig("new_lead", { stage: 2, keywords: ["x"] })).toEqual({});
+    expect(parseTriggerConfig("reply", { stage: 9, tag: "" })).toEqual({});
+  });
+  it("valida la calificación de IA y conserva el nombre del anuncio", () => {
+    expect(
+      parseFlow(
+        { trigger: { type: "ad_lead", value: " Preventa " }, steps: [{ type: "end" }] },
+        "a",
+        [],
+      ).triggerValue,
+    ).toBe("Preventa");
+    expect(() =>
+      parseFlow(
+        { trigger: { type: "qualification", value: "magia" }, steps: [{ type: "end" }] },
+        "a",
+        [],
+      ),
+    ).toThrow();
+  });
+});
+
+describe("pasos de entrega al asesor en JSON", () => {
+  const U = "00000000-0000-0000-0000-000000000002";
+  it("valida avisos, asignación, bot y la condición del asesor", () => {
+    const f = parseFlow(
+      {
+        stopOnReply: false,
+        steps: [
+          { type: "assign", mode: "round_robin", userIds: [U, "no-es-uuid"] },
+          { type: "notify", to: ["assigned", "admins", "hack"], text: " Atiende ", whatsapp: true },
+          { type: "action", action: "bot_off", value: "x" },
+          { type: "condition", rule: { kind: "advisor_replied" }, yes: [], no: [] },
+        ],
+      },
+      "a",
+      [],
+    );
+    expect(f.steps[0]).toMatchObject({ type: "assign", mode: "round_robin", userIds: [U] });
+    expect(f.steps[1]).toMatchObject({
+      to: ["assigned", "admins"],
+      text: "Atiende",
+      whatsapp: true,
+    });
+    expect(f.steps[2]).toMatchObject({ action: "bot_off", value: "" });
+    expect(f.steps[3]).toMatchObject({ rule: { kind: "advisor_replied" } });
+  });
+  it("rechaza avisos vacíos y asignación fija sin persona", () => {
+    expect(() => parseFlow({ steps: [{ type: "notify", text: "" }] }, "a", [])).toThrow(/vacío/);
+    expect(() => parseFlow({ steps: [{ type: "assign", mode: "fixed" }] }, "a", [])).toThrow(
+      /a quién/,
+    );
+  });
+});
+
+describe("reglas de WhatsApp en JSON", () => {
+  const base = { name: "x", trigger: { type: "new_lead" } };
+  it("ida y vuelta conserva plantilla, horario hábil y las acciones de baja", () => {
+    const f = parseFlow(
+      {
+        ...base,
+        steps: [
+          {
+            type: "message",
+            text: "Hola",
+            businessHours: true,
+            template: { name: "seguimiento_1", language: "es_MX", params: ["{{nombre}}"] },
+          },
+          { type: "message", text: "", material: "Video de avances" },
+          { type: "action", action: "exit_flows" },
+          { type: "action", action: "opt_out", value: "x" },
+        ],
+      },
+      "a",
+      mats,
+    );
+    const again = parseFlow(
+      exportFlow(f, (id) => mats.find((m) => m.id === id)?.name ?? null),
+      "a",
+      mats,
+    );
+    expect(again.steps).toMatchObject([
+      {
+        type: "message",
+        businessHours: true,
+        template: { name: "seguimiento_1", language: "es_MX", params: ["{{nombre}}"] },
+      },
+      { type: "message", text: "", materialId: "m1" },
+      { type: "action", action: "exit_flows", value: "" },
+      { type: "action", action: "opt_out", value: "" },
+    ]);
+    expect(again.steps[1]).not.toHaveProperty("template");
+  });
+
+  it("rechaza plantillas mal escritas y mensajes sin texto ni archivo", () => {
+    expect(() =>
+      parseFlow(
+        { ...base, steps: [{ type: "message", text: "a", template: { name: "Mi Plantilla" } }] },
+        "a",
+        mats,
+      ),
+    ).toThrow(/plantilla/);
+    expect(() =>
+      parseFlow({ ...base, steps: [{ type: "message", text: " " }] }, "a", mats),
+    ).toThrow(/vacío/);
   });
 });

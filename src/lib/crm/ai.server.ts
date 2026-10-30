@@ -38,9 +38,25 @@ export const qualificationSchema = z.object({
     "no_interesado",
     "seguimiento",
   ]),
+  message_intent: z
+    .enum([
+      "quiere_comprar",
+      "pide_precio",
+      "pide_cita",
+      "objecion",
+      "no_interesado",
+      "quiere_humano",
+      "pide_baja",
+      "otro",
+    ])
+    .describe("Intención del ÚLTIMO mensaje del prospecto, sin contar el resto del historial"),
   tags_to_add: z.array(z.string()).describe("Etiquetas en minúsculas-con-guiones"),
   appointment_requested: z.boolean(),
-  summary: z.string().describe("Resumen de una línea del estado del lead para el asesor"),
+  summary: z
+    .string()
+    .describe(
+      "Resumen para el asesor en máximo 3 líneas cortas: qué busca, datos clave (presupuesto, enganche, plazo) y qué falta o qué pidió",
+    ),
 });
 export type Qualification = z.infer<typeof qualificationSchema>;
 

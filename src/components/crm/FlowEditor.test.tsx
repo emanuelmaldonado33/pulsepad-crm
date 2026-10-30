@@ -1,0 +1,159 @@
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { FlowEditor } from "./FlowEditor";
+import type { Flow } from "@/lib/crm/flows";
+
+const flow: Flow = {
+  id: "f",
+  accountId: "a",
+  name: "Seguimiento",
+  active: true,
+  triggerType: "new_lead",
+  triggerValue: "",
+  triggerConfig: {},
+  allowReentry: true,
+  steps: [],
+  stopOnReply: true,
+};
+
+describe("editor de flujos", () => {
+  it("agrega una condición con pasos en la rama «No» y la guarda anidada", async () => {
+    const onSave = vi.fn(async () => true);
+    render(<FlowEditor flow={flow} materials={[]} onClose={() => {}} onSave={onSave} />);
+    fireEvent.click(screen.getByRole("button", { name: /Condición sí \/ no/ }));
+    // La condición por defecto es «¿Respondió?»: con anti-spam activo avisa que no sirve.
+    expect(screen.getByText(/nunca llegará a la rama «Sí»/)).toBeTruthy();
+    const no = screen.getByText("No").parentElement!;
+    fireEvent.change(within(no).getByLabelText("Agregar paso a la rama"), {
+      target: { value: "message" },
+    });
+    fireEvent.click(screen.getByRole("switch", { name: "Regla anti-spam" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar flujo" }));
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = (onSave.mock.calls[0] as unknown as [Flow])[0];
+    expect(saved.stopOnReply).toBe(false);
+    expect(saved.steps).toHaveLength(1);
+    expect(saved.steps[0]).toMatchObject({ type: "condition", yes: [], no: [{ type: "message" }] });
+  });
+
+  it("arma un disparador por palabras clave con filtro de etapa y sin reingreso", async () => {
+    const onSave = vi.fn(async () => true);
+    render(<FlowEditor flow={flow} materials={[]} onClose={() => {}} onSave={onSave} />);
+    fireEvent.change(screen.getByLabelText("Tipo de disparador"), { target: { value: "keyword" } });
+    const save = screen.getByRole("button", { name: "Guardar flujo" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Palabras o frases"), {
+      target: { value: "precio, cuánto cuesta," },
+    });
+    fireEvent.change(screen.getByLabelText("Filtro de etapa"), { target: { value: "2" } });
+    expect(save.disabled).toBe(false);
+    fireEvent.click(save);
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = (onSave.mock.calls[0] as unknown as [Flow])[0];
+    expect(saved.triggerType).toBe("keyword");
+    expect(saved.triggerConfig).toEqual({ keywords: ["precio", "cuánto cuesta"], stage: 2 });
+    expect(saved.allowReentry).toBe(false);
+  });
+
+  it("la intención se elige con botones y avisa si se deja el reingreso", () => {
+    render(<FlowEditor flow={flow} materials={[]} onClose={() => {}} onSave={async () => true} />);
+    fireEvent.change(screen.getByLabelText("Tipo de disparador"), { target: { value: "intent" } });
+    const btn = screen.getByRole("button", { name: "Pide precio o cotización" });
+    fireEvent.click(btn);
+    expect(btn.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.queryByText(/vuelve a empezar cada vez/)).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Permitir reingreso" }));
+    expect(screen.getByText(/vuelve a empezar cada vez/)).toBeTruthy();
+  });
+
+  it("arma un aviso al equipo y una asignación con las personas de la subcuenta", async () => {
+    const onSave = vi.fn(async () => true);
+    const members = [
+      {
+        accountId: "a",
+        userId: "u1",
+        role: "owner" as const,
+        name: "Emanuel",
+        whatsappPhone: "",
+        available: true,
+      },
+      {
+        accountId: "a",
+        userId: "u2",
+        role: "member" as const,
+        name: "Ana",
+        whatsappPhone: "",
+        available: false,
+      },
+    ];
+    render(
+      <FlowEditor
+        flow={flow}
+        materials={[]}
+        members={members}
+        onClose={() => {}}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Asignar asesor/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Ana (no disponible)" }));
+    fireEvent.click(screen.getByRole("button", { name: /Avisar al equipo/ }));
+    const who = screen.getByRole("group", { name: "A quién avisar" });
+    fireEvent.click(within(who).getByRole("button", { name: "Asesor asignado" }));
+    const save = screen.getByRole("button", { name: "Guardar flujo" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(within(who).getByRole("button", { name: "Emanuel" }));
+    fireEvent.click(save);
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = (onSave.mock.calls[0] as unknown as [Flow])[0];
+    expect(saved.steps[0]).toMatchObject({ type: "assign", mode: "round_robin", userIds: ["u2"] });
+    expect(saved.steps[1]).toMatchObject({ type: "notify", to: ["u1"], whatsapp: true });
+  });
+});
+
+describe("reglas de WhatsApp en el editor", () => {
+  const templates = [
+    {
+      name: "seguimiento",
+      language: "es_MX",
+      category: "MARKETING",
+      body: "Hola {{1}}, ¿sigues interesado?",
+      headerFormat: null,
+      params: ["1"],
+    },
+  ];
+  const late: Flow = {
+    ...flow,
+    steps: [
+      { id: "w", type: "wait", amount: 2, unit: "day" },
+      { id: "m", type: "message", text: "¿Sigues ahí?", materialId: null },
+    ],
+  };
+
+  it("avisa del mensaje que cae fuera de las 24 h y guarda la plantilla y el horario hábil", async () => {
+    const onSave = vi.fn(async () => true);
+    render(
+      <FlowEditor
+        flow={late}
+        materials={[]}
+        templates={templates}
+        onClose={() => {}}
+        onSave={onSave}
+      />,
+    );
+    expect(screen.getByText(/Un mensaje puede llegar/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Plantilla de WhatsApp"), {
+      target: { value: "seguimiento|es_MX" },
+    });
+    fireEvent.change(screen.getByLabelText("Valor de {{1}}"), { target: { value: "{{nombre}}" } });
+    expect(screen.queryByText(/Un mensaje puede llegar/)).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Solo en horario hábil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar flujo" }));
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = (onSave.mock.calls[0] as unknown as [Flow])[0];
+    expect(saved.steps[1]).toMatchObject({
+      businessHours: true,
+      template: { name: "seguimiento", language: "es_MX", params: ["{{nombre}}"] },
+    });
+  });
+});

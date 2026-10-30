@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { TAG_RULES, applyTag, type BotEvent } from "./automation";
 import { leadPatch, toLead, toMessage } from "./db";
+import { MESSAGE_INTENTS } from "./flows";
 import type { Lead } from "./types";
 import { dispatchMessage } from "./whatsapp.server";
 
@@ -23,11 +24,16 @@ export async function qualifyLead(
     .single();
   if (ae || !acc) throw new Error("Subcuenta no encontrada");
 
+  // Mensaje del prospecto que la IA clasifica (dispara los flujos por intención).
+  let leadMessageId = opts.inboundMessageId ?? null;
   if (!opts.skipInsert && !opts.inboundMessageId) {
-    const { error: ie } = await sb
+    const { data: im, error: ie } = await sb
       .from("messages")
-      .insert({ lead_id: row.id, sender: "lead", body: text });
-    if (ie) throw new Error("No se pudo guardar el mensaje");
+      .insert({ lead_id: row.id, sender: "lead", body: text })
+      .select("id")
+      .single();
+    if (ie || !im) throw new Error("No se pudo guardar el mensaje");
+    leadMessageId = im.id;
   }
   // Los 60 mensajes más recientes, en orden cronológico para la IA.
   const { data: recent } = await sb
@@ -70,6 +76,8 @@ ${acc.qualification_rules}
 
 ETAPAS DEL PIPELINE: P0 Nuevo, P1 Contactado, P2 En calificación, P3 Material/Video enviado, P4 Perfilado (monto/plazo), P5 Cita agendada, P6 Seguimiento, P7 Ganado/No califica.
 ${materialRule}
+En message_intent clasifica sólo el último mensaje del prospecto: quiere_comprar (quiere apartar, comprar o pagar), pide_precio (pregunta precio, costo o cotización), pide_cita (pide llamada, visita o cita), objecion (duda o freno: precio alto, desconfianza, "lo voy a pensar"), no_interesado, quiere_humano (pide hablar con una persona), pide_baja (pide que ya no le escriban o no recibir más mensajes; no basta con que no le interese) u otro.
+Si un mensaje del prospecto empieza con "🎤 (nota de voz)" es la transcripción automática de un audio que mandó: respóndelo como si lo hubiera escrito. Si dice "🖼️ (imagen: …)" es la descripción automática de una foto que mandó, seguida de su texto si escribió alguno; úsala como dato. Si el audio o la imagen no se pudo leer, pídele amablemente que lo escriba.
 Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y confirma la cita para mañana a las 11:00.
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
@@ -176,8 +184,25 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
     booked = true;
   }
 
-  const { error: ue } = await sb.from("leads").update(leadPatch(lead)).eq("id", lead.id);
+  // El resumen queda en el lead para los avisos al equipo (paso «Avisar al equipo»).
+  const { error: ue } = await sb
+    .from("leads")
+    .update({ ...leadPatch(lead), ...(o.summary?.trim() ? { ai_summary: o.summary.trim() } : {}) })
+    .eq("id", lead.id);
   if (ue) throw new Error("No se pudo actualizar el lead");
+  // Guardar la intención en el mensaje inscribe los flujos «La IA detecta intención» (0012).
+  if (leadMessageId && o.message_intent) {
+    const { error: ie } = await sb
+      .from("messages")
+      .update({ ai_intent: o.message_intent })
+      .eq("id", leadMessageId);
+    if (ie) console.error("message intent update failed", ie.message);
+    else if (o.message_intent !== "otro")
+      events.push({
+        kind: "dato",
+        text: `Intención del mensaje: ${MESSAGE_INTENTS[o.message_intent].toLowerCase()}`,
+      });
+  }
   if (booked) {
     const at = new Date(Date.now() + 24 * 3600_000);
     at.setUTCHours(17, 0, 0, 0); // 11:00 CDMX
@@ -186,7 +211,10 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       .insert({ account_id: acc.id, lead_id: lead.id, at: at.toISOString(), kind: "Llamada" });
     events.push({ kind: "cita", text: "Cita creada en la agenda" });
   }
-  const reply = o.reply.trim() || null;
+  // Pidió no recibir mensajes: la base lo da de baja (0014) y no se le contesta.
+  const optOut = o.message_intent === "pide_baja";
+  if (optOut) events.push({ kind: "bot", text: "Pidió no recibir mensajes: dado de baja" });
+  const reply = optOut ? null : o.reply.trim() || null;
   if (reply) {
     const { data: bm } = await sb
       .from("messages")

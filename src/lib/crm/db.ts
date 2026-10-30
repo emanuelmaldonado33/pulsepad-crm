@@ -1,6 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
-import type { Enrollment, Flow } from "./flows";
-import type { Account, Appointment, Lead, Message } from "./types";
+import type { BusinessHours, Enrollment, Flow } from "./flows";
+import type { Account, Appointment, Lead, Member, Message } from "./types";
 
 type T = Database["public"]["Tables"];
 export type AccountRow = T["accounts"]["Row"];
@@ -22,6 +22,21 @@ export const toAccount = (r: AccountRow): Account => ({
   aiModel: r.ai_model,
   template: r.template,
   standardTags: r.standard_tags ?? [],
+  autoPauseBot: r.auto_pause_bot ?? true,
+  businessHours: (r.business_hours &&
+  typeof r.business_hours === "object" &&
+  !Array.isArray(r.business_hours)
+    ? r.business_hours
+    : {}) as BusinessHours,
+});
+
+export const toMember = (r: T["account_memberships"]["Row"]): Member => ({
+  accountId: r.account_id,
+  userId: r.user_id,
+  role: r.role as Member["role"],
+  name: r.display_name || "Sin nombre",
+  whatsappPhone: r.whatsapp_phone ?? "",
+  available: r.available ?? true,
 });
 
 export const toMessage = (r: MessageRow): Message => ({
@@ -30,6 +45,7 @@ export const toMessage = (r: MessageRow): Message => ({
   text: r.body,
   at: r.created_at,
   waStatus: r.wa_status,
+  intent: r.ai_intent ?? null,
 });
 
 export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
@@ -47,10 +63,15 @@ export const toLead = (r: LeadRow, messages: Message[]): Lead => ({
   tags: r.tags ?? [],
   notes: r.notes,
   botActive: r.bot_active,
+  assignedTo: r.assigned_to ?? null,
+  aiSummary: r.ai_summary ?? null,
+  optedOutAt: r.opted_out_at ?? null,
+  optOutReason: r.opt_out_reason ?? null,
   messages,
   createdAt: r.created_at,
 });
 
+/** Columnas que guarda una edición del lead. La baja va aparte (no se pisa por carreras). */
 export const leadPatch = (l: Lead) => ({
   name: l.name,
   phone: l.phone,
@@ -82,6 +103,12 @@ export const toFlow = (r: T["flows"]["Row"]): Flow => ({
   active: r.active,
   triggerType: r.trigger_type as Flow["triggerType"],
   triggerValue: r.trigger_value,
+  triggerConfig: (r.trigger_config &&
+  typeof r.trigger_config === "object" &&
+  !Array.isArray(r.trigger_config)
+    ? r.trigger_config
+    : {}) as unknown as Flow["triggerConfig"],
+  allowReentry: r.allow_reentry ?? true,
   steps: (Array.isArray(r.steps) ? r.steps : []) as unknown as Flow["steps"],
   stopOnReply: r.stop_on_reply,
 });
@@ -93,8 +120,10 @@ export const toEnrollment = (r: T["flow_enrollments"]["Row"]): Enrollment => ({
   accountId: r.account_id,
   status: r.status as Enrollment["status"],
   currentStep: r.current_step,
+  currentNode: r.current_node,
   nextRunAt: r.next_run_at,
   replied: r.replied,
   cancelReason: r.cancel_reason,
+  triggerReason: r.trigger_reason ?? null,
   createdAt: r.created_at,
 });

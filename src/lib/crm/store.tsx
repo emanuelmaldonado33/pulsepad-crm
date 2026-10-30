@@ -10,12 +10,21 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
-import type { Account, Appointment, Lead, Message } from "./types";
+import type { Account, AppNotification, Appointment, Lead, Member, Message } from "./types";
 import { applyTag } from "./automation";
-import type { Enrollment, Flow, Material } from "./flows";
+import type { Enrollment, Flow, Material, WaTemplate } from "./flows";
 import { useServerFn } from "@tanstack/react-start";
 import { runFlowNow } from "./flows.functions";
-import { leadPatch, toAccount, toAppointment, toEnrollment, toFlow, toLead, toMessage } from "./db";
+import {
+  leadPatch,
+  toAccount,
+  toAppointment,
+  toEnrollment,
+  toFlow,
+  toLead,
+  toMember,
+  toMessage,
+} from "./db";
 import type { Json } from "@/integrations/supabase/types";
 
 interface State {
@@ -25,6 +34,10 @@ interface State {
   flows: Flow[];
   enrollments: Enrollment[];
   materials: Material[];
+  members: Member[];
+  notifications: AppNotification[];
+  templates: (WaTemplate & { accountId: string })[];
+  me: string | null;
 }
 
 interface Ctx {
@@ -57,6 +70,22 @@ interface Ctx {
   importLeads: (
     rows: { name: string; phone: string; budget: number | null; tag: string | null }[],
   ) => Promise<number>;
+  /** Equipo de la subcuenta activa. */
+  members: Member[];
+  /** user_id de quien tiene la sesión abierta. */
+  me: string | null;
+  /** Avisos de quien tiene la sesión, de todas sus subcuentas. */
+  notifications: AppNotification[];
+  markNotificationsRead: (ids: string[]) => Promise<void>;
+  updateMember: (
+    userId: string,
+    patch: Partial<Pick<Member, "name" | "whatsappPhone" | "available">>,
+  ) => Promise<void>;
+  assignLead: (leadId: string, userId: string | null) => Promise<void>;
+  /** Plantillas de WhatsApp aprobadas de la subcuenta activa (se sincronizan desde Meta). */
+  templates: WaTemplate[];
+  /** Dar de baja (sale de todos los flujos, bot apagado) o quitar la baja. */
+  setOptOut: (leadId: string, on: boolean) => Promise<void>;
 }
 
 const CrmContext = createContext<Ctx | null>(null);
@@ -93,6 +122,10 @@ export function CrmProvider({ children }: { children: ReactNode }) {
     flows: [],
     enrollments: [],
     materials: [],
+    members: [],
+    notifications: [],
+    templates: [],
+    me: null,
   });
   const [activeId, setActiveId] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -112,7 +145,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
 
   const reload = useCallback(async () => {
-    const [a, l, m, ap, fl, en, ma] = await Promise.all([
+    const [a, l, m, ap, fl, en, ma, mb, no, wt, se] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at"),
       supabase.from("leads").select("*").order("created_at", { ascending: false }),
       supabase.from("messages").select("*").order("created_at").limit(5000),
@@ -124,8 +157,17 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         .order("created_at", { ascending: false })
         .limit(5000),
       supabase.from("materials").select("*").order("created_at"),
+      supabase.from("account_memberships").select("*").order("created_at"),
+      supabase
+        .from("notifications")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(50),
+      supabase.from("whatsapp_templates").select("*").order("name"),
+      supabase.auth.getSession(),
     ]);
-    const err = a.error || l.error || m.error || ap.error || fl.error || en.error || ma.error;
+    const err =
+      a.error || l.error || m.error || ap.error || fl.error || en.error || ma.error || mb.error;
     if (err) return fail("cargar los datos", err);
     const byLead = new Map<string, Message[]>();
     for (const r of m.data ?? []) {
@@ -147,6 +189,29 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         url: r.url,
         storagePath: r.storage_path,
       })),
+      members: (mb.data ?? []).map(toMember),
+      // Si la migración 0013 aún no está aplicada, la bandeja de avisos queda vacía.
+      notifications: (no.data ?? []).map((r) => ({
+        id: r.id,
+        accountId: r.account_id,
+        leadId: r.lead_id,
+        title: r.title,
+        body: r.body,
+        waStatus: r.wa_status,
+        readAt: r.read_at,
+        createdAt: r.created_at,
+      })),
+      // Sin la migración 0014 no hay plantillas: los pasos simplemente no las ofrecen.
+      templates: (wt.data ?? []).map((r) => ({
+        accountId: r.account_id,
+        name: r.name,
+        language: r.language,
+        category: r.category,
+        body: r.body,
+        headerFormat: r.header_format as WaTemplate["headerFormat"],
+        params: r.params ?? [],
+      })),
+      me: se.data.session?.user.id ?? null,
     });
     setLoading(false);
   }, []);
@@ -185,6 +250,10 @@ export function CrmProvider({ children }: { children: ReactNode }) {
             setter_prompt: next.setterPrompt,
             qualification_rules: next.qualificationRules,
             ai_model: next.aiModel,
+            auto_pause_bot: next.autoPauseBot ?? true,
+            ...(patch.businessHours
+              ? { business_hours: patch.businessHours as unknown as Json }
+              : {}),
           })
           .eq("id", id);
         fail("guardar la subcuenta", error);
@@ -274,6 +343,8 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           active: f.active,
           trigger_type: f.triggerType,
           trigger_value: f.triggerValue,
+          trigger_config: f.triggerConfig as unknown as Json,
+          allow_reentry: f.allowReentry,
           steps: f.steps as unknown as Json,
           stop_on_reply: f.stopOnReply,
         };
@@ -351,7 +422,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
               ? "image"
               : file.type.startsWith("video/")
                 ? "video"
-                : "pdf";
+                : file.type.startsWith("audio/")
+                  ? "audio"
+                  : "pdf";
         const path = `${account.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-80)}`;
         const up = await supabase.storage
           .from("materials")
@@ -468,6 +541,78 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         }
         await reload();
         return n;
+      },
+      members: state.members.filter((m) => m.accountId === account.id),
+      me: state.me,
+      notifications: state.notifications,
+      markNotificationsRead: async (ids) => {
+        if (!ids.length) return;
+        const at = new Date().toISOString();
+        setState((s) => ({
+          ...s,
+          notifications: s.notifications.map((n) =>
+            ids.includes(n.id) && !n.readAt ? { ...n, readAt: at } : n,
+          ),
+        }));
+        fail(
+          "marcar los avisos",
+          (await supabase.from("notifications").update({ read_at: at }).in("id", ids)).error,
+        );
+      },
+      updateMember: async (userId, patch) => {
+        setState((s) => ({
+          ...s,
+          members: s.members.map((m) =>
+            m.userId === userId && m.accountId === account.id ? { ...m, ...patch } : m,
+          ),
+        }));
+        const { error } = await supabase
+          .from("account_memberships")
+          .update({
+            ...(patch.name !== undefined ? { display_name: patch.name.slice(0, 80) } : {}),
+            ...(patch.whatsappPhone !== undefined ? { whatsapp_phone: patch.whatsappPhone } : {}),
+            ...(patch.available !== undefined ? { available: patch.available } : {}),
+          })
+          .eq("account_id", account.id)
+          .eq("user_id", userId);
+        fail("guardar los datos del equipo", error);
+      },
+      templates: state.templates.filter((t) => t.accountId === account.id),
+      setOptOut: async (leadId, on) => {
+        const at = on ? new Date().toISOString() : null;
+        setState((s) => ({
+          ...s,
+          leads: s.leads.map((l) =>
+            l.id === leadId
+              ? {
+                  ...l,
+                  optedOutAt: at,
+                  optOutReason: on ? "Marcado a mano" : null,
+                  botActive: on ? false : l.botActive,
+                }
+              : l,
+          ),
+        }));
+        fail(
+          on ? "dar de baja al lead" : "quitar la baja",
+          (
+            await supabase
+              .from("leads")
+              .update({ opted_out_at: at, opt_out_reason: on ? "Marcado a mano" : null })
+              .eq("id", leadId)
+          ).error,
+        );
+        await reload();
+      },
+      assignLead: async (leadId, userId) => {
+        setState((s) => ({
+          ...s,
+          leads: s.leads.map((l) => (l.id === leadId ? { ...l, assignedTo: userId } : l)),
+        }));
+        fail(
+          "asignar el lead",
+          (await supabase.from("leads").update({ assigned_to: userId }).eq("id", leadId)).error,
+        );
       },
     };
   }, [state, activeId, loading, reload]);

@@ -13,11 +13,12 @@ import {
   Trash2,
   Video,
   Workflow,
+  Mic,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCrm } from "@/lib/crm/store";
 import { STAGES } from "@/lib/crm/types";
-import { FLOW_TEMPLATES, triggerLabel, type Flow, type Material } from "@/lib/crm/flows";
+import { FLOW_TEMPLATES, allSteps, triggerLabel, type Flow, type Material } from "@/lib/crm/flows";
 import { FlowEditor } from "@/components/crm/FlowEditor";
 import { AiFlowDialog, ImportFlowDialog } from "@/components/crm/FlowAiImport";
 import { exportFlow } from "@/lib/crm/flow-io";
@@ -61,6 +62,8 @@ function Flows() {
     addMaterial,
     deleteMaterial,
     uploadMaterial,
+    templates,
+    members,
   } = useCrm();
   const [editing, setEditing] = useState<{ flow: Flow; isNew: boolean } | null>(null);
   const [dialog, setDialog] = useState<"ai" | "import" | null>(null);
@@ -88,6 +91,8 @@ function Flows() {
     active: false,
     triggerType: "new_lead",
     triggerValue: "",
+    triggerConfig: {},
+    allowReentry: true,
     steps: [],
     stopOnReply: true,
   });
@@ -148,7 +153,7 @@ function Flows() {
                 <div className="min-w-0 flex-1">
                   <div className="font-semibold">{f.name}</div>
                   <div className="text-xs text-muted-foreground">
-                    {triggerLabel(f, stageName)} · {f.steps.length} pasos
+                    {triggerLabel(f, stageName)} · {allSteps(f.steps).length} pasos
                     {f.stopOnReply ? " · anti-spam" : ""}
                   </div>
                 </div>
@@ -207,7 +212,10 @@ function Flows() {
                       name: `${t.name} (${account.name})`,
                       triggerType: t.triggerType,
                       triggerValue: t.triggerValue,
+                      triggerConfig: t.triggerConfig ?? {},
+                      allowReentry: t.allowReentry ?? true,
                       steps: t.steps(materials),
+                      stopOnReply: t.stopOnReply ?? true,
                       active: true,
                     },
                     isNew: true,
@@ -258,6 +266,8 @@ function Flows() {
         <FlowEditor
           flow={editing.flow}
           materials={materials}
+          members={members}
+          templates={templates}
           onClose={() => setEditing(null)}
           onSave={(f) => saveFlow(f, editing.isNew)}
         />
@@ -311,12 +321,12 @@ function Library({
         <Upload className="h-6 w-6 text-primary" />
         <span className="text-sm font-semibold">{busy ? "Subiendo…" : "Subir archivos"}</span>
         <span className="text-xs text-muted-foreground">
-          PDF, imágenes o videos cortos · máx. 50 MB
+          PDF, imágenes, videos cortos o notas de voz · máx. 50 MB
         </span>
         <input
           type="file"
           multiple
-          accept="application/pdf,image/*,video/*"
+          accept="application/pdf,image/*,video/*,audio/*"
           className="hidden"
           onChange={(e) => {
             void upload(e.target.files);
@@ -343,6 +353,7 @@ function Library({
           <option value="pdf">Documento PDF</option>
           <option value="video">Video</option>
           <option value="image">Imagen</option>
+          <option value="audio">Nota de voz o audio</option>
         </select>
         <Input
           className="w-56"
@@ -366,6 +377,8 @@ function Library({
             <Video className="h-5 w-5 text-primary" />
           ) : m.kind === "image" ? (
             <ImageIcon className="h-5 w-5 text-primary" />
+          ) : m.kind === "audio" ? (
+            <Mic className="h-5 w-5 text-primary" />
           ) : (
             <FileText className="h-5 w-5 text-primary" />
           )}

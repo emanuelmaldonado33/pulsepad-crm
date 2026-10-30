@@ -96,6 +96,23 @@ secreto `ANTHROPIC_API_KEY` en Lovable Cloud. El bot pide a Claude una respuesta
 mismo formato estructurado (respuesta, datos, intención, etiquetas, cita) y activa el
 respaldo automático de Anthropic si el modelo declina un mensaje.
 
+## Notas de voz e imágenes
+
+Cuando el lead manda una nota de voz o una foto, el webhook la descarga de Meta con el
+token del canal y la guarda como texto antes de que la lea la IA, así el bot, las
+palabras clave de los flujos y el asesor la ven igual que un mensaje escrito:
+
+- Notas de voz: se transcriben con la API de OpenAI (`gpt-4o-mini-transcribe`, unos
+  US$0.003 por minuto). Guarda el secreto `OPENAI_API_KEY` en Lovable Cloud.
+- Fotos: las describe Claude Haiku 5.5 (incluido el texto que se lea en ellas) con el
+  mismo `ANTHROPIC_API_KEY` del bot. El texto que el lead escriba junto a la foto se
+  conserva.
+- Videos y documentos no se analizan: se anotan con su nombre y su texto.
+
+Si falta la clave o el servicio falla, el mensaje se guarda igual ("nota de voz que no
+se pudo transcribir") y el bot le pide al lead que lo escriba. Los modelos se pueden
+cambiar con `WHATSAPP_TRANSCRIBE_MODEL` y `WHATSAPP_VISION_MODEL`.
+
 El bot solo comparte enlaces de la biblioteca de materiales de la cuenta. Si no hay
 material cargado, no envía enlaces.
 

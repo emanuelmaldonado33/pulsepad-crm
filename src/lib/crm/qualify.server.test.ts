@@ -127,3 +127,85 @@ describe("qualifyLead", () => {
     expect(system).not.toContain("demo.video");
   });
 });
+
+describe("intención del mensaje", () => {
+  const withIntent = (message_intent: string) =>
+    runQualifier.mockResolvedValue({
+      output: {
+        reply: "",
+        budget: null,
+        down_payment: null,
+        term_months: null,
+        intent: "informacion",
+        message_intent,
+        tags_to_add: [],
+        appointment_requested: false,
+        summary: "",
+      },
+      usage: { input: 1, output: 1, total: 2 },
+    });
+  const intentUpdates = (calls: FakeQuery[]) =>
+    calls.filter(
+      (c) =>
+        c.table === "messages" &&
+        c.op === "update" &&
+        (c.payload as Record<string, unknown>)["ai_intent"] !== undefined,
+    );
+
+  it("guarda en el mensaje entrante la intención que detectó la IA", async () => {
+    withIntent("pide_precio");
+    const { client, calls } = db({ id: "m78" });
+    const r = await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    const [u] = intentUpdates(calls);
+    expect(u).toMatchObject({ payload: { ai_intent: "pide_precio" } });
+    expect(u!.filters).toContainEqual(["eq", "id", "m78"]);
+    expect(r.events).toContainEqual({
+      kind: "dato",
+      text: "Intención del mensaje: pide precio o cotización",
+    });
+  });
+
+  it("en el simulador clasifica el mensaje que acaba de guardar", async () => {
+    withIntent("quiere_comprar");
+    const { client, calls } = db({ id: "x" });
+    await qualifyLead(client as never, "L1", "lo quiero");
+    expect(intentUpdates(calls)[0]!.filters).toContainEqual(["eq", "id", "reply"]);
+  });
+
+  it("si la respuesta ya se aplicó no vuelve a clasificar", async () => {
+    withIntent("pide_precio");
+    const { client, calls } = db(null);
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    expect(intentUpdates(calls)).toHaveLength(0);
+  });
+
+  it("«otro» se guarda pero no se anuncia", async () => {
+    withIntent("otro");
+    const { client, calls } = db({ id: "m78" });
+    const r = await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    expect(intentUpdates(calls)).toHaveLength(1);
+    expect(r.events.some((e) => e.text.startsWith("Intención del mensaje"))).toBe(false);
+  });
+});
+
+describe("resumen para el asesor", () => {
+  it("guarda en el lead el resumen de la IA", async () => {
+    runQualifier.mockResolvedValue({
+      output: {
+        reply: "",
+        budget: null,
+        down_payment: null,
+        term_months: null,
+        intent: "informacion",
+        tags_to_add: [],
+        appointment_requested: false,
+        summary: " Busca depa.\nPresupuesto 3 M. ",
+      },
+      usage: { input: 1, output: 1, total: 2 },
+    });
+    const { client, calls } = db({ id: "m78" });
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    const upd = calls.find((c) => c.table === "leads" && c.op === "update")!;
+    expect(upd.payload).toMatchObject({ ai_summary: "Busca depa.\nPresupuesto 3 M." });
+  });
+});

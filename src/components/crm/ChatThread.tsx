@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Message } from "@/lib/crm/types";
+import { MESSAGE_INTENTS, type MessageIntent } from "@/lib/crm/flows";
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
@@ -54,6 +55,11 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
                   {m.text}
                 </div>
               </div>
+              {!mine && m.intent && m.intent in MESSAGE_INTENTS && (
+                <div className="mt-1 pl-1 text-[11px] text-muted-foreground">
+                  IA: {MESSAGE_INTENTS[m.intent as MessageIntent].toLowerCase()}
+                </div>
+              )}
               {endGroup && mine && m.waStatus && (
                 <div
                   className={`mt-1 pr-1 text-right text-[11px] ${failed ? "text-destructive" : "text-muted-foreground"}`}
