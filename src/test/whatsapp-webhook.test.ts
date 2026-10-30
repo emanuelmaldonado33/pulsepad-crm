@@ -159,6 +159,60 @@ describe("webhook de WhatsApp", () => {
     expect(lead.payload).not.toHaveProperty("ad_id");
   });
 
+  it("un lead nuevo de QR guarda la lona y se asigna al vendedor del QR", async () => {
+    normal((q) => {
+      if (q.table === "leads" && q.op === "select") return { data: [] };
+      if (q.table === "leads" && q.op === "insert") return { data: { id: "L2" } };
+      if (q.table === "qr_sources")
+        return { data: { id: "qr1", name: "Lona Av. Vallarta", assigned_to: "ana" } };
+      if (q.table === "account_memberships") return { data: { user_id: "ana" } };
+      return undefined;
+    });
+    await post(payload("wamid.qr", { text: { body: "Hola, quiero información (ref ab12)" } }));
+    const qrQuery = db.calls.find((c) => c.table === "qr_sources")!;
+    expect(qrQuery.filters).toContainEqual(["eq", "code", "AB12"]);
+    expect(qrQuery.filters).toContainEqual(["eq", "account_id", "acc"]);
+    const lead = db.calls.find((c) => c.table === "leads" && c.op === "insert")!;
+    expect(lead.payload).toMatchObject({
+      source: "Lona Av. Vallarta",
+      qr_source_id: "qr1",
+      assigned_to: "ana",
+    });
+    expect(db.calls.find((c) => c.table === "lead_events" && c.op === "insert")).toBeDefined();
+  });
+
+  it("si el vendedor del QR ya no está en el equipo, el lead entra sin asignar", async () => {
+    normal((q) => {
+      if (q.table === "leads" && q.op === "select") return { data: [] };
+      if (q.table === "leads" && q.op === "insert") return { data: { id: "L2" } };
+      if (q.table === "qr_sources")
+        return { data: { id: "qr1", name: "Lona Centro", assigned_to: "luis" } };
+      if (q.table === "account_memberships") return { data: null };
+      return undefined;
+    });
+    await post(payload("wamid.qr2", { text: { body: "info ref AB12" } }));
+    const lead = db.calls.find((c) => c.table === "leads" && c.op === "insert")!;
+    expect(lead.payload).toMatchObject({ qr_source_id: "qr1", assigned_to: null });
+  });
+
+  it("un código que no existe deja el lead como WhatsApp normal", async () => {
+    normal((q) => {
+      if (q.table === "leads" && q.op === "select") return { data: [] };
+      if (q.table === "leads" && q.op === "insert") return { data: { id: "L2" } };
+      if (q.table === "qr_sources") return { data: null };
+      return undefined;
+    });
+    await post(payload("wamid.qr3", { text: { body: "hola (ref ZZZZ)" } }));
+    const lead = db.calls.find((c) => c.table === "leads" && c.op === "insert")!;
+    expect(lead.payload).toMatchObject({ source: "WhatsApp" });
+    expect(lead.payload).not.toHaveProperty("qr_source_id");
+  });
+
+  it("un lead que ya existe no busca QR", async () => {
+    await post(payload("wamid.qr4", { text: { body: "otra vez (ref AB12)" } }));
+    expect(db.calls.find((c) => c.table === "qr_sources")).toBeUndefined();
+  });
+
   it("un reintento de Meta con el mismo wamid no duplica el mensaje", async () => {
     normal((q) =>
       q.table === "messages" && q.op === "select" ? { data: { id: "existing" } } : undefined,

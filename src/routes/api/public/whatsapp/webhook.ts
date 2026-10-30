@@ -183,6 +183,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         }
 
         const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
+        const { qrSourceOf } = await import("@/lib/crm/qr.server");
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
@@ -237,13 +238,16 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               if (candidatesError) return new Response("Temporary failure", { status: 500 });
               let leadId = (cands ?? []).find((l) => samePhone(l.phone, m.from))?.id;
               if (!leadId) {
+                // QR de lona o vendedor: el primer mensaje trae "ref CODIGO".
+                const qr = await qrSourceOf(sb, ch.account_id, textOf(m));
                 const { data: created, error: createError } = await sb
                   .from("leads")
                   .insert({
                     account_id: ch.account_id,
                     name,
                     phone: `+${m.from}`,
-                    source: "WhatsApp",
+                    source: qr?.name ?? "WhatsApp",
+                    ...(qr ? { qr_source_id: qr.id, assigned_to: qr.assigned_to } : {}),
                     ...adOf(m.referral),
                   })
                   .select("id")
@@ -253,6 +257,13 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                   return new Response("Temporary failure", { status: 500 });
                 }
                 leadId = created.id;
+                if (qr)
+                  await sb.from("lead_events").insert({
+                    account_id: ch.account_id,
+                    lead_id: created.id,
+                    kind: "qr",
+                    body: `Llegó por el QR «${qr.name}»`,
+                  });
               }
               // Notas de voz y fotos se guardan ya como texto: así las leen la IA, las
               // palabras clave de los flujos (trigger al insertar) y el asesor.

@@ -17,6 +17,7 @@ import {
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WhatsAppChannel } from "@/components/crm/WhatsAppChannel";
+import { QrSources } from "@/components/crm/QrSources";
 import { Switch } from "@/components/ui/switch";
 import type { Member } from "@/lib/crm/types";
 import { DEFAULT_TZ, WEEKDAYS, hoursConfigured, type BusinessHours } from "@/lib/crm/flows";
@@ -64,9 +65,10 @@ function Config() {
   return (
     <div className="mx-auto w-full max-w-5xl p-4 lg:p-6">
       <Tabs defaultValue="ia">
-        <TabsList>
+        <TabsList className="h-auto flex-wrap">
           <TabsTrigger value="ia">IA y marca</TabsTrigger>
           <TabsTrigger value="whatsapp">Canal WhatsApp</TabsTrigger>
+          <TabsTrigger value="qr">Lonas y QR</TabsTrigger>
           <TabsTrigger value="equipo">Equipo</TabsTrigger>
           <TabsTrigger value="horario">Horario hábil</TabsTrigger>
         </TabsList>
@@ -75,6 +77,9 @@ function Config() {
         </TabsContent>
         <TabsContent value="whatsapp" className="mt-4">
           <WhatsAppChannel key={account.id} accountId={account.id} />
+        </TabsContent>
+        <TabsContent value="qr" className="mt-4">
+          <QrSources key={account.id} />
         </TabsContent>
         <TabsContent value="equipo" className="mt-4">
           <TeamConfig key={account.id} />

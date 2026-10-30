@@ -53,7 +53,8 @@ function NumField({
 }
 
 export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean }) {
-  const { updateLead, account, members, assignLead, setOptOut } = useCrm();
+  const { updateLead, account, members, assignLead, setOptOut, qrSources } = useCrm();
+  const qr = qrSources.find((q) => q.id === lead.qrSourceId);
   const quick = Array.from(new Set([...Object.keys(TAG_RULES), ...account.standardTags])).filter(
     (t) => !lead.tags.includes(t),
   );
@@ -79,6 +80,14 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
         <div className="text-sm text-muted-foreground">
           {lead.phone} · {lead.source}
         </div>
+        {qr && (
+          <div className="mt-1 text-sm">
+            Llegó por el QR <b>{qr.name}</b>
+            {qr.assignedTo && (
+              <> · Vendedor: {members.find((m) => m.userId === qr.assignedTo)?.name ?? "—"}</>
+            )}
+          </div>
+        )}
         <div className="mt-2 inline-block rounded-md bg-primary/10 px-2 py-1 text-xs font-semibold text-primary">
           {stageLabel(lead)}
         </div>
