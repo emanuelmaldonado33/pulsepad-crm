@@ -17,21 +17,33 @@ export type Database = {
       account_memberships: {
         Row: {
           account_id: string
+          available: boolean
           created_at: string
+          display_name: string
+          last_assigned_at: string | null
           role: string
           user_id: string
+          whatsapp_phone: string
         }
         Insert: {
           account_id: string
+          available?: boolean
           created_at?: string
+          display_name?: string
+          last_assigned_at?: string | null
           role?: string
           user_id: string
+          whatsapp_phone?: string
         }
         Update: {
           account_id?: string
+          available?: boolean
           created_at?: string
+          display_name?: string
+          last_assigned_at?: string | null
           role?: string
           user_id?: string
+          whatsapp_phone?: string
         }
         Relationships: [
           {
@@ -46,8 +58,10 @@ export type Database = {
       accounts: {
         Row: {
           ai_model: string
+          auto_pause_bot: boolean
           brand: string
           brand_foreground: string
+          business_hours: Json
           created_at: string
           created_by_user_id: string | null
           id: string
@@ -63,8 +77,10 @@ export type Database = {
         }
         Insert: {
           ai_model?: string
+          auto_pause_bot?: boolean
           brand: string
           brand_foreground: string
+          business_hours?: Json
           created_at?: string
           created_by_user_id?: string | null
           id: string
@@ -80,8 +96,10 @@ export type Database = {
         }
         Update: {
           ai_model?: string
+          auto_pause_bot?: boolean
           brand?: string
           brand_foreground?: string
+          business_hours?: Json
           created_at?: string
           created_by_user_id?: string | null
           id?: string
@@ -193,8 +211,10 @@ export type Database = {
       flow_enrollments: {
         Row: {
           account_id: string
+          advisor_replied: boolean
           cancel_reason: string | null
           created_at: string
+          current_node: string | null
           current_step: number
           flow_id: string
           id: string
@@ -203,11 +223,14 @@ export type Database = {
           next_run_at: string
           replied: boolean
           status: string
+          trigger_reason: string | null
         }
         Insert: {
           account_id: string
+          advisor_replied?: boolean
           cancel_reason?: string | null
           created_at?: string
+          current_node?: string | null
           current_step?: number
           flow_id: string
           id?: string
@@ -216,11 +239,14 @@ export type Database = {
           next_run_at?: string
           replied?: boolean
           status?: string
+          trigger_reason?: string | null
         }
         Update: {
           account_id?: string
+          advisor_replied?: boolean
           cancel_reason?: string | null
           created_at?: string
+          current_node?: string | null
           current_step?: number
           flow_id?: string
           id?: string
@@ -229,6 +255,7 @@ export type Database = {
           next_run_at?: string
           replied?: boolean
           status?: string
+          trigger_reason?: string | null
         }
         Relationships: [
           {
@@ -258,33 +285,39 @@ export type Database = {
         Row: {
           account_id: string
           active: boolean
+          allow_reentry: boolean
           created_at: string
           id: string
           name: string
           steps: Json
           stop_on_reply: boolean
+          trigger_config: Json
           trigger_type: string
           trigger_value: string
         }
         Insert: {
           account_id: string
           active?: boolean
+          allow_reentry?: boolean
           created_at?: string
           id?: string
           name: string
           steps?: Json
           stop_on_reply?: boolean
+          trigger_config?: Json
           trigger_type?: string
           trigger_value?: string
         }
         Update: {
           account_id?: string
           active?: boolean
+          allow_reentry?: boolean
           created_at?: string
           id?: string
           name?: string
           steps?: Json
           stop_on_reply?: boolean
+          trigger_config?: Json
           trigger_type?: string
           trigger_value?: string
         }
@@ -298,17 +331,66 @@ export type Database = {
           },
         ]
       }
+      lead_events: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          id: string
+          kind: string
+          lead_id: string
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          id?: string
+          kind: string
+          lead_id: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+          kind?: string
+          lead_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
           account_id: string
+          ad_id: string | null
+          ad_name: string | null
+          ai_summary: string | null
+          assigned_to: string | null
           bot_active: boolean
           budget: number | null
           created_at: string
+          ctwa_clid: string | null
           down_payment: number | null
           id: string
           intent: string | null
           name: string
           notes: string
+          opt_out_reason: string | null
+          opted_out_at: string | null
           outcome: string | null
           phone: string
           source: string
@@ -318,14 +400,21 @@ export type Database = {
         }
         Insert: {
           account_id: string
+          ad_id?: string | null
+          ad_name?: string | null
+          ai_summary?: string | null
+          assigned_to?: string | null
           bot_active?: boolean
           budget?: number | null
           created_at?: string
+          ctwa_clid?: string | null
           down_payment?: number | null
           id?: string
           intent?: string | null
           name: string
           notes?: string
+          opt_out_reason?: string | null
+          opted_out_at?: string | null
           outcome?: string | null
           phone?: string
           source?: string
@@ -335,14 +424,21 @@ export type Database = {
         }
         Update: {
           account_id?: string
+          ad_id?: string | null
+          ad_name?: string | null
+          ai_summary?: string | null
+          assigned_to?: string | null
           bot_active?: boolean
           budget?: number | null
           created_at?: string
+          ctwa_clid?: string | null
           down_payment?: number | null
           id?: string
           intent?: string | null
           name?: string
           notes?: string
+          opt_out_reason?: string | null
+          opted_out_at?: string | null
           outcome?: string | null
           phone?: string
           source?: string
@@ -402,6 +498,7 @@ export type Database = {
         Row: {
           ai_applied_at: string | null
           ai_attempts: number
+          ai_intent: string | null
           ai_last_error: string | null
           ai_processing_at: string | null
           ai_status: string
@@ -416,6 +513,7 @@ export type Database = {
         Insert: {
           ai_applied_at?: string | null
           ai_attempts?: number
+          ai_intent?: string | null
           ai_last_error?: string | null
           ai_processing_at?: string | null
           ai_status?: string
@@ -430,6 +528,7 @@ export type Database = {
         Update: {
           ai_applied_at?: string | null
           ai_attempts?: number
+          ai_intent?: string | null
           ai_last_error?: string | null
           ai_processing_at?: string | null
           ai_status?: string
@@ -444,6 +543,57 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "messages_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          account_id: string
+          body: string
+          created_at: string
+          id: string
+          lead_id: string | null
+          read_at: string | null
+          title: string
+          user_id: string
+          wa_status: string | null
+        }
+        Insert: {
+          account_id: string
+          body: string
+          created_at?: string
+          id?: string
+          lead_id?: string | null
+          read_at?: string | null
+          title: string
+          user_id: string
+          wa_status?: string | null
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          created_at?: string
+          id?: string
+          lead_id?: string | null
+          read_at?: string | null
+          title?: string
+          user_id?: string
+          wa_status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_lead_id_fkey"
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
@@ -498,11 +648,60 @@ export type Database = {
           },
         ]
       }
+      whatsapp_templates: {
+        Row: {
+          account_id: string
+          body: string
+          category: string
+          header_format: string | null
+          language: string
+          name: string
+          params: string[]
+          synced_at: string
+        }
+        Insert: {
+          account_id: string
+          body?: string
+          category?: string
+          header_format?: string | null
+          language: string
+          name: string
+          params?: string[]
+          synced_at?: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          category?: string
+          header_format?: string | null
+          language?: string
+          name?: string
+          params?: string[]
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
     }
     Functions: {
+      assign_lead: {
+        Args: {
+          p_lead_id: string
+          p_round_robin: boolean
+          p_user_ids: string[]
+        }
+        Returns: string
+      }
       claim_inbound_message: {
         Args: {
           p_expire_after?: string
@@ -511,6 +710,23 @@ export type Database = {
           p_stale_after?: string
         }
         Returns: string
+      }
+      flow_intent_label: { Args: { p: string }; Returns: string }
+      flow_is_opt_out: { Args: { p: string }; Returns: boolean }
+      flow_lead_matches: {
+        Args: { p_config: Json; p_stage: number; p_tags: string[] }
+        Returns: boolean
+      }
+      flow_norm: { Args: { p: string }; Returns: string }
+      flow_try_enroll: {
+        Args: {
+          p_account_id: string
+          p_allow_reentry: boolean
+          p_flow_id: string
+          p_lead_id: string
+          p_reason: string
+        }
+        Returns: undefined
       }
       has_account_role: {
         Args: { p_account_id: string; p_roles: string[] }
