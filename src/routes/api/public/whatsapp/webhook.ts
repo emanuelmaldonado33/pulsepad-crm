@@ -2,6 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 const MAX_BODY_BYTES = 1_000_000;
+const mediaSchema = z
+  .object({ id: z.string().min(1).max(250), caption: z.string().max(3000).optional() })
+  .passthrough();
 const payloadSchema = z
   .object({
     entry: z
@@ -41,6 +44,14 @@ const payloadSchema = z
                             .passthrough()
                             .optional(),
                           button: z.object({ text: z.string().max(2000) }).optional(),
+                          // Archivos: se transcriben (voz) o se describen (foto) antes de guardar.
+                          audio: mediaSchema.optional(),
+                          image: mediaSchema.optional(),
+                          video: mediaSchema.optional(),
+                          document: mediaSchema
+                            .extend({ filename: z.string().max(500).optional() })
+                            .optional(),
+                          sticker: mediaSchema.optional(),
                           interactive: z
                             .object({
                               button_reply: z.object({ title: z.string().max(2000) }).optional(),
@@ -175,6 +186,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
+        const { mediaOf, mediaToText } = await import("@/lib/crm/media.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
         const leadsWithNews = new Set<string>();
@@ -242,7 +254,12 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                 }
                 leadId = created.id;
               }
-              const body = textOf(m).slice(0, 2000);
+              // Notas de voz y fotos se guardan ya como texto: así las leen la IA, las
+              // palabras clave de los flujos (trigger al insertar) y el asesor.
+              const media = mediaOf(m);
+              const body = (
+                media && !m.text ? await mediaToText(media, ch.access_token) : textOf(m)
+              ).slice(0, 2000);
               const { data: inserted, error: insertError } = await sb
                 .from("messages")
                 .insert({

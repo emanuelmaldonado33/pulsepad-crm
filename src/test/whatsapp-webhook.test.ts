@@ -4,6 +4,7 @@ import { fakeSupabase, type FakeQuery, type FakeResult } from "@/test/fake-supab
 
 const processInboundMessage = vi.fn();
 const runDueForLead = vi.fn();
+const mediaToText = vi.fn();
 let respond: (q: FakeQuery) => FakeResult | undefined = () => ({});
 const db = fakeSupabase((q) => respond(q));
 
@@ -15,6 +16,11 @@ vi.mock("@/lib/crm/flow-runner.server", () => ({
   runDueForLead: (...a: unknown[]) => runDueForLead(...a),
 }));
 
+vi.mock("@/lib/crm/media.server", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/crm/media.server")>()),
+  mediaToText: (...a: unknown[]) => mediaToText(...a),
+}));
+
 const { Route } = await import("@/routes/api/public/whatsapp/webhook");
 type Handler = (ctx: { request: Request }) => Promise<Response>;
 const POST = (Route.options as unknown as { server: { handlers: { POST: Handler } } }).server
@@ -23,6 +29,7 @@ const POST = (Route.options as unknown as { server: { handlers: { POST: Handler 
 const SECRET = "app-secret";
 const channel = {
   account_id: "acc",
+  access_token: "tok",
   phone_number_id: "1000001",
   app_secret: SECRET,
   enabled: true,
@@ -76,6 +83,7 @@ beforeEach(() => {
   processInboundMessage.mockReset();
   processInboundMessage.mockResolvedValue("processed");
   runDueForLead.mockReset().mockResolvedValue(0);
+  mediaToText.mockReset().mockResolvedValue("🎤 (nota de voz) quiero informes");
   normal();
 });
 
@@ -194,5 +202,41 @@ describe("webhook de WhatsApp", () => {
     normal((q) => (q.table === "whatsapp_channels" ? { data: null } : undefined));
     expect((await post(payload(), "sha256=00")).status).toBe(200);
     expect(inserts()).toHaveLength(0);
+  });
+
+  it("guarda una nota de voz ya transcrita para que la IA y los flujos la lean", async () => {
+    const audio = { id: "media-1", mime_type: "audio/ogg; codecs=opus", voice: true };
+    await post(payload("wamid.4", { type: "audio", text: undefined, audio }));
+    expect(mediaToText).toHaveBeenCalledWith({ kind: "audio", id: "media-1" }, "tok");
+    expect(inserts()[0]!.payload).toMatchObject({
+      body: "🎤 (nota de voz) quiero informes",
+      ai_status: "pending",
+    });
+    expect(processInboundMessage).toHaveBeenCalledWith(db.client, "new-msg");
+  });
+
+  it("pasa el texto de la foto junto con la imagen", async () => {
+    mediaToText.mockResolvedValue("🖼️ (imagen: fachada) ¿esta sigue?");
+    const image = { id: "media-2", mime_type: "image/jpeg", caption: "¿esta sigue?" };
+    await post(payload("wamid.5", { type: "image", text: undefined, image }));
+    expect(mediaToText).toHaveBeenCalledWith(
+      { kind: "image", id: "media-2", caption: "¿esta sigue?" },
+      "tok",
+    );
+    expect(inserts()[0]!.payload).toMatchObject({ body: "🖼️ (imagen: fachada) ¿esta sigue?" });
+  });
+
+  it("un reintento de Meta con una nota de voz ya guardada no la vuelve a transcribir", async () => {
+    normal((q) =>
+      q.table === "messages" && q.op === "select" ? { data: { id: "existing" } } : undefined,
+    );
+    await post(payload("wamid.4", { type: "audio", text: undefined, audio: { id: "m" } }));
+    expect(mediaToText).not.toHaveBeenCalled();
+  });
+
+  it("los mensajes de texto no pasan por la transcripción", async () => {
+    await post(payload());
+    expect(mediaToText).not.toHaveBeenCalled();
+    expect(inserts()[0]!.payload).toMatchObject({ body: "hola" });
   });
 });
