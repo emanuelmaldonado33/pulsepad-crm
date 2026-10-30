@@ -1,15 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-const MAX_BODY_BYTES = 1_000_000;
+// El historial de la app (coexistencia) llega en entregas más grandes que un mensaje normal.
+const MAX_BODY_BYTES = 4_000_000;
+/** Campos de coexistencia: lo que el negocio escribe desde la app y el historial. */
+const COEXISTENCE_FIELDS = new Set(["smb_message_echoes", "history", "smb_app_state_sync"]);
 const payloadSchema = z
   .object({
     entry: z
       .array(
         z.object({
+          id: z.string().max(40).optional(),
           changes: z
             .array(
               z.object({
+                field: z.string().max(80).optional(),
                 value: z
                   .object({
                     metadata: z
@@ -138,7 +143,8 @@ const adOf = (r: Referral) =>
 export const Route = createFileRoute("/api/public/whatsapp/webhook")({
   server: {
     handlers: {
-      // Handshake de Meta: hub.verify_token debe coincidir con el de alguna subcuenta.
+      // Handshake de Meta: hub.verify_token debe coincidir con el de alguna subcuenta o con el
+      // de la app de Pulse (registro integrado).
       GET: async ({ request }) => {
         const u = new URL(request.url);
         const mode = u.searchParams.get("hub.mode");
@@ -146,6 +152,9 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const challenge = u.searchParams.get("hub.challenge") ?? "";
         if (mode !== "subscribe" || !token || token.length > 200)
           return new Response("Forbidden", { status: 403 });
+        const platformToken = process.env["META_WEBHOOK_VERIFY_TOKEN"];
+        if (platformToken && token === platformToken)
+          return new Response(challenge, { headers: { "Content-Type": "text/plain" } });
         const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
         const { data } = await supabaseAdmin
           .from("whatsapp_channels")
@@ -175,6 +184,9 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
+        const coexistence = await import("@/lib/crm/coexistence.server");
+        // Los canales del registro integrado firman con el App Secret de la app de Pulse.
+        const platformSecret = process.env["META_APP_SECRET"] ?? "";
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
         const leadsWithNews = new Set<string>();
@@ -184,8 +196,32 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         for (const entry of payload.entry)
           for (const change of entry.changes) {
             const v = change.value;
+            const field = change.field ?? "messages";
+            if (field === "account_update") {
+              // La empresa quitó a Pulse desde la app: el canal se apaga hasta reconectarlo.
+              if (v["event"] !== "PARTNER_REMOVED" || !entry.id) continue;
+              const { data: chs, error } = await sb
+                .from("whatsapp_channels")
+                .select("*")
+                .eq("waba_id", entry.id);
+              if (error) return new Response("Temporary failure", { status: 500 });
+              for (const c of chs ?? []) {
+                if (!(await validSignature(raw, sigHeader, c.app_secret || platformSecret)))
+                  return new Response("Invalid signature", { status: 401 });
+                await sb
+                  .from("whatsapp_channels")
+                  .update({
+                    enabled: false,
+                    last_error: "La empresa desconectó Pulse desde WhatsApp Business",
+                    updated_at: new Date().toISOString(),
+                  })
+                  .eq("account_id", c.account_id);
+              }
+              continue;
+            }
+            const isCoexistence = COEXISTENCE_FIELDS.has(field);
             const pnid = v.metadata?.phone_number_id;
-            if (!pnid || !v.messages?.length) continue; // estados de entrega, etc.
+            if (!pnid || (!isCoexistence && !v.messages?.length)) continue; // estados, etc.
             const { data: ch, error: channelError } = await sb
               .from("whatsapp_channels")
               .select("*")
@@ -197,10 +233,27 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               return new Response("Temporary failure", { status: 500 });
             }
             if (!ch) continue;
-            if (!(await validSignature(raw, sigHeader, ch.app_secret)))
+            if (!(await validSignature(raw, sigHeader, ch.app_secret || platformSecret)))
               return new Response("Invalid signature", { status: 401 });
 
-            for (const m of v.messages) {
+            if (isCoexistence) {
+              // Igual que los mensajes: si no se pudo guardar, 500 para que Meta reintente.
+              try {
+                if (field === "smb_message_echoes") {
+                  for (const id of await coexistence.saveEchoes(sb, ch, v)) leadsWithNews.add(id);
+                } else if (field === "history") {
+                  await coexistence.saveHistory(sb, ch, v);
+                } else {
+                  await coexistence.applyContacts(sb, ch, v);
+                }
+              } catch (e) {
+                console.error("webhook coexistence failed", e instanceof Error ? e.message : e);
+                return new Response("Temporary failure", { status: 500 });
+              }
+              continue;
+            }
+
+            for (const m of v.messages ?? []) {
               const { data: existing, error: existingError } = await sb
                 .from("messages")
                 .select("id, lead_id")

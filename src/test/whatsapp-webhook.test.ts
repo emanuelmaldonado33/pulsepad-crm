@@ -87,8 +87,8 @@ describe("webhook de WhatsApp", () => {
     expect(inserts()).toHaveLength(0);
   });
 
-  it("rechaza cuerpos de más de 1 MB", async () => {
-    const res = await post("x".repeat(1_000_001), "sha256=00");
+  it("rechaza cuerpos de más de 4 MB", async () => {
+    const res = await post("x".repeat(4_000_001), "sha256=00");
     expect(res.status).toBe(413);
   });
 

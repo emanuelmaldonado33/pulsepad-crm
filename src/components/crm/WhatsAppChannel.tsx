@@ -4,10 +4,12 @@ import { Copy, Loader2, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   getWhatsAppStatus,
+  retryCoexistenceSync,
   saveWhatsApp,
   syncWhatsAppTemplates,
   type WhatsAppStatus,
 } from "@/lib/crm/whatsapp.functions";
+import { EmbeddedSignupButton } from "./EmbeddedSignupButton";
 import { useCrm } from "@/lib/crm/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -114,6 +116,12 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
         </div>
         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${cls}`}>{label}</span>
       </section>
+
+      <ConnectSection accountId={accountId} st={st} onDone={load} />
+
+      <div className="px-1 text-[11px] uppercase tracking-wide text-muted-foreground">
+        Conexión manual (avanzado)
+      </div>
 
       <section className="grid gap-3 rounded-2xl border bg-card p-5 sm:grid-cols-2">
         <Field id="wa-phone-number-id" label="Phone Number ID">
@@ -230,12 +238,85 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
           </Button>
         </label>
         <p className="text-xs text-muted-foreground sm:col-span-2">
-          En Meta, suscribe el webhook al campo <b>messages</b>. Fuera de la ventana de 24 h desde
-          el último mensaje del prospecto, Meta sólo permite plantillas aprobadas.
+          En Meta, suscribe el webhook al campo <b>messages</b> (y, si usas la app de WhatsApp
+          Business con el mismo número, también a <b>smb_message_echoes</b>, <b>history</b>,{" "}
+          <b>smb_app_state_sync</b> y <b>account_update</b>). Fuera de la ventana de 24 h desde el
+          último mensaje del prospecto, Meta sólo permite plantillas aprobadas.
         </p>
       </section>
       <TemplatesSection accountId={accountId} canSync={!!st.wabaId && st.hasToken} />
     </div>
+  );
+}
+
+const HISTORY: Record<string, string> = {
+  pending: "Pidiendo el historial a Meta…",
+  syncing: "Importando el historial de la app",
+  done: "Historial de la app importado",
+  declined: "La empresa no quiso compartir el historial de la app",
+  error: "Meta no aceptó la solicitud de historial",
+};
+
+/** Registro integrado de Meta y estado de la coexistencia con la app WhatsApp Business. */
+function ConnectSection({
+  accountId,
+  st,
+  onDone,
+}: {
+  accountId: string;
+  st: WhatsAppStatus;
+  onDone: () => Promise<void>;
+}) {
+  const retry = useServerFn(retryCoexistenceSync);
+  const [busy, setBusy] = useState(false);
+  const runRetry = async () => {
+    setBusy(true);
+    try {
+      const r = await retry({ data: { accountId } });
+      if (!r.ok) toast.error(r.error);
+      await onDone();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo reintentar");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const embedded = st.onboarding === "embedded";
+  return (
+    <section className="space-y-3 rounded-2xl border bg-card p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <div className="font-semibold">Conectar con Facebook (recomendado)</div>
+          <p className="text-sm text-muted-foreground">
+            {embedded
+              ? `Conectado con Meta${st.displayPhoneNumber ? ` · ${st.displayPhoneNumber}` : ""}.`
+              : "Conecta un número nuevo o el que ya usas en la app WhatsApp Business, sin copiar tokens."}
+          </p>
+        </div>
+        <EmbeddedSignupButton accountId={accountId} onDone={onDone} />
+      </div>
+      {embedded && st.coexistence && (
+        <div className="space-y-1 text-xs text-muted-foreground">
+          <p>
+            Coexistencia activa: puedes seguir contestando desde la app. Lo que escribas ahí aparece
+            en la Bandeja como asesor y pausa el bot de ese lead.
+          </p>
+          {st.historyStatus && (
+            <p>
+              {HISTORY[st.historyStatus] ?? st.historyStatus}
+              {st.historyStatus === "syncing" && st.historyProgress !== null
+                ? ` · ${st.historyProgress}%`
+                : ""}
+            </p>
+          )}
+          {st.canRetrySync && (
+            <Button size="sm" variant="outline" disabled={busy} onClick={runRetry}>
+              {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Reintentar historial
+            </Button>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 
