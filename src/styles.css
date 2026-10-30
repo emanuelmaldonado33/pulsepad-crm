@@ -189,6 +189,32 @@
     var(--shadow-lg);
 }
 
+/*
+ * Cristal líquido estilo iOS: solo para la barra superior y la barra inferior flotante.
+ * El contenido (tarjetas, chats, formularios) queda sólido para que se lea bien.
+ */
+@utility liquid-glass {
+  background-color: color-mix(in oklab, var(--background) 62%, transparent);
+  backdrop-filter: blur(28px) saturate(190%) brightness(1.04);
+  border: 1px solid oklch(1 0 0 / 0.55);
+  box-shadow:
+    inset 0 1px 0 oklch(1 0 0 / 0.75),
+    inset 0 -1px 0 oklch(0 0 0 / 0.04),
+    0 10px 30px -10px oklch(0 0 0 / 0.22),
+    0 2px 6px oklch(0 0 0 / 0.06);
+  :is(.dark) & {
+    background-color: color-mix(in oklab, var(--background) 58%, transparent);
+    border-color: oklch(1 0 0 / 0.14);
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 0.16),
+      0 10px 30px -10px oklch(0 0 0 / 0.6);
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    background-color: var(--background);
+    backdrop-filter: none;
+  }
+}
+
 @utility lift {
   transition:
     transform 0.35s var(--ease-spring),
@@ -223,6 +249,19 @@
   }
   body {
     background-color: var(--color-background);
+    /* Fondo suave con color, como el fondo de pantalla de iOS, para que el cristal tenga qué reflejar. */
+    background-image:
+      radial-gradient(
+        60rem 40rem at 10% -10%,
+        color-mix(in oklab, var(--primary) 10%, transparent),
+        transparent 70%
+      ),
+      radial-gradient(
+        50rem 36rem at 100% 110%,
+        color-mix(in oklab, var(--chart-4) 8%, transparent),
+        transparent 70%
+      );
+    background-attachment: fixed;
     color: var(--color-foreground);
     font-family: var(--font-sans);
     font-feature-settings: "cv11", "ss01", "ss03";

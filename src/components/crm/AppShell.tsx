@@ -66,7 +66,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   return (
     <div style={brandVars} className="flex min-h-screen flex-col">
-      <header className="glass sticky top-0 z-30 !border-x-0 !border-t-0">
+      <header className="liquid-glass sticky top-0 z-30 !rounded-none !border-x-0 !border-t-0">
         <div className="flex h-14 items-center gap-2 px-3 sm:h-16 sm:gap-4 sm:px-4 lg:px-6">
           <Select value={account.id} onValueChange={setAccount}>
             <SelectTrigger
@@ -177,15 +177,15 @@ export function AppShell({ children }: { children: ReactNode }) {
       </header>
       <nav
         aria-label="Navegación móvil"
-        className="fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-hairline bg-background/95 px-1 pt-1 pb-[max(env(safe-area-inset-bottom),0.25rem)] shadow-[0_-8px_24px_rgba(0,0,0,0.06)] backdrop-blur md:hidden"
+        className="liquid-glass fixed inset-x-3 bottom-[max(env(safe-area-inset-bottom),0.75rem)] z-40 grid grid-cols-4 gap-1 rounded-[30px] p-1.5 md:hidden"
       >
         {PRIMARY_NAV.map(({ to, label, icon: Icon }) => (
           <Link
             key={to}
             to={to}
             activeOptions={{ exact: to === "/" }}
-            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-medium text-muted-foreground"
-            activeProps={{ className: "!text-primary" }}
+            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-[24px] px-1 text-xs font-semibold text-muted-foreground transition-colors duration-300"
+            activeProps={{ className: "!text-primary bg-primary/12" }}
           >
             <Icon className="h-5 w-5" />
             <span>{label}</span>
@@ -196,7 +196,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               aria-label="Más secciones"
-              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-medium ${MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "text-primary" : "text-muted-foreground"}`}
+              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-[24px] px-1 text-xs font-semibold ${MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "bg-primary/12 text-primary" : "text-muted-foreground"}`}
             >
               <MoreHorizontal className="h-5 w-5" />
               <span>Más</span>
@@ -213,7 +213,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </DropdownMenuContent>
         </DropdownMenu>
       </nav>
-      <main className="flex min-h-0 flex-1 flex-col pb-16 md:pb-0">
+      <main className="flex min-h-0 flex-1 flex-col pb-28 md:pb-0">
         {loading ? (
           <div className="p-8 text-sm text-muted-foreground">Cargando datos…</div>
         ) : (
