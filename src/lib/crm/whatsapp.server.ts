@@ -10,6 +10,15 @@ export const samePhone = (a: string, b: string) => {
     y = digits(b);
   return x.length >= 10 && y.length >= 10 && x.slice(-10) === y.slice(-10);
 };
+/**
+ * Número "to" para la API de WhatsApp. Meta entrega los celulares de México como 521 + 10
+ * dígitos, pero envía (y valida la lista de destinatarios) con 52 + 10. El lead conserva el
+ * número tal como llegó; sólo el envío usa este. Otros países no cambian.
+ */
+export const waRecipient = (phone: string) => {
+  const d = digits(phone);
+  return /^521\d{10}$/.test(d) ? `52${d.slice(3)}` : d;
+};
 
 async function admin() {
   return (await import("@/integrations/supabase/client.server")).supabaseAdmin;
@@ -84,7 +93,7 @@ export async function dispatchMessage(opts: {
     await sb.from("messages").update({ wa_status: "simulado" }).eq("id", opts.messageId);
     return "simulado" as const;
   }
-  const to = digits(opts.phone);
+  const to = waRecipient(opts.phone);
   try {
     const m = opts.material;
     const type = m ? mediaType(m) : null;
@@ -180,7 +189,7 @@ export async function dispatchTemplate(opts: {
   }
   try {
     const waId = await graphSend(ch.phone_number_id, ch.access_token, {
-      to: digits(opts.phone),
+      to: waRecipient(opts.phone),
       ...templatePayload(opts.template, opts.values, opts.material),
     });
     await sb
@@ -276,7 +285,7 @@ export async function sendInternalWhatsApp(accountId: string, phone: string, tex
   if (!ch) return "simulado" as const;
   try {
     await graphSend(ch.phone_number_id, ch.access_token, {
-      to: digits(phone),
+      to: waRecipient(phone),
       type: "text",
       text: { body: text.slice(0, 4096), preview_url: true },
     });
