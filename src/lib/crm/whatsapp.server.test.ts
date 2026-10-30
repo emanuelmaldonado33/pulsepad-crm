@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { planChannelSave } from "./whatsapp.server";
+import { planChannelSave, waRecipient } from "./whatsapp.server";
 
 const base = {
   phoneNumberId: "",
@@ -151,5 +151,31 @@ describe("plantillas y archivos de WhatsApp", async () => {
     expect(mediaType({ ...pdf, kind: "audio", url: "https://x/n.ogg" })).toBe("audio");
     expect(mediaType({ ...pdf, kind: "video", url: "https://youtu.be/abc" })).toBeNull();
     expect(mediaType(pdf)).toBe("document");
+  });
+});
+
+describe("waRecipient (521 de México)", () => {
+  it("cambia 521 + 10 dígitos por 52 + 10", () => {
+    expect(waRecipient("5215512345678")).toBe("525512345678");
+  });
+
+  it("deja igual un número de México que ya viene con 52", () => {
+    expect(waRecipient("525512345678")).toBe("525512345678");
+  });
+
+  it("no toca otros países", () => {
+    expect(waRecipient("14155550123")).toBe("14155550123");
+    expect(waRecipient("5491112345678")).toBe("5491112345678");
+    expect(waRecipient("34612345678")).toBe("34612345678");
+  });
+
+  it("acepta + y espacios", () => {
+    expect(waRecipient("+52 1 55 1234 5678")).toBe("525512345678");
+    expect(waRecipient("+52 55 1234-5678")).toBe("525512345678");
+  });
+
+  it("no recorta un 521 que no tiene 10 dígitos después", () => {
+    expect(waRecipient("52155123456789")).toBe("52155123456789");
+    expect(waRecipient("521551234567")).toBe("521551234567");
   });
 });
