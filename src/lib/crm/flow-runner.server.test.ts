@@ -11,6 +11,7 @@ const dispatchTemplate = vi.fn(async (_: unknown) => ({
 // null = simulación (sin canal); un objeto = canal real de WhatsApp.
 const sendingChannel = vi.fn(async (..._: unknown[]): Promise<object | null> => null);
 vi.mock("./whatsapp.server", () => ({
+  GRAPH: "https://graph.test",
   dispatchMessage: (a: unknown) => dispatchMessage(a),
   dispatchTemplate: (a: unknown) => dispatchTemplate(a),
   sendInternalWhatsApp: (...a: unknown[]) => sendInternalWhatsApp(...a),
@@ -548,5 +549,62 @@ describe("reglas de WhatsApp", () => {
     await runEnrollment(t.client, "e1");
     expect(t.sent()).toEqual([]);
     expect(t.enrUpdates().at(-1)!.payload).toMatchObject({ status: "cancelled" });
+  });
+});
+
+describe("paso «Enviar evento a Meta»", () => {
+  const run = async (lead: Record<string, unknown>, enabled: boolean) => {
+    const sb = fakeSupabase((q: FakeQuery) => {
+      if (
+        q.table === "flow_enrollments" &&
+        q.op === "update" &&
+        q.filters.some((f) => f[0] === "or")
+      )
+        return {
+          data: { id: "e1", flow_id: "f1", lead_id: "l1", account_id: "acc", current_step: 0 },
+        };
+      if (q.table === "flow_enrollments" && q.op === "select")
+        return { data: { status: "active" } };
+      if (q.table === "flows")
+        return {
+          data: {
+            id: "f1",
+            account_id: "acc",
+            name: "Ganados",
+            steps: [{ id: "m", type: "meta_event", event: "Purchase", value: null }],
+          },
+        };
+      if (q.table === "leads")
+        return { data: { id: "l1", account_id: "acc", name: "Ana", stage: 7, tags: [], ...lead } };
+      if (q.table === "accounts")
+        return { data: { id: "acc", name: "Espacio FX", meta_events_enabled: enabled } };
+      if (q.table === "appointments" || q.table === "materials") return { data: [] };
+      return {};
+    });
+    await runEnrollment(sb.client as never, "e1");
+    return sb.calls;
+  };
+  const events = (calls: FakeQuery[]) =>
+    calls.filter((c) => c.table === "lead_events").map((c) => (c.payload as { body: string }).body);
+
+  it("sin anuncio no manda nada y lo explica en el historial", async () => {
+    const calls = await run({ ctwa_clid: null }, true);
+    expect(calls.some((c) => c.table === "meta_events")).toBe(false);
+    expect(events(calls)).toEqual([
+      "No se avisó a Meta «Compró (venta cerrada)»: el cliente no llegó por un anuncio",
+    ]);
+  });
+
+  it("apagado en Configuración tampoco manda", async () => {
+    const calls = await run({ ctwa_clid: "clid" }, false);
+    expect(calls.some((c) => c.table === "meta_events")).toBe(false);
+    expect(events(calls)[0]).toMatch(/apagado/);
+  });
+
+  it("lead de anuncio: lo pone en la cola de Meta", async () => {
+    const calls = await run({ ctwa_clid: "clid" }, true);
+    expect(
+      calls.find((c) => c.table === "meta_events" && c.op === "upsert")?.payload,
+    ).toMatchObject({ lead_id: "l1", event_name: "Purchase", origin: "flujo" });
   });
 });

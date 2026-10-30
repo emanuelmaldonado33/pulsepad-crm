@@ -1,4 +1,5 @@
 import type { BusinessHours } from "./flows";
+import type { StageEvents } from "./meta";
 
 export type Sender = "lead" | "bot" | "asesor";
 
@@ -32,6 +33,10 @@ export interface Account {
   businessHours?: BusinessHours;
   /** Número público del negocio (dígitos con lada) para los QR de lonas. */
   publicWhatsapp?: string;
+  /** Mandar eventos a Meta (Conversions API) de los leads que llegan por anuncio. */
+  metaEventsEnabled?: boolean;
+  /** Qué evento de Meta manda cada etapa del pipeline. */
+  metaStageEvents?: StageEvents;
 }
 
 /** Aviso interno para una persona del equipo (notifications). */

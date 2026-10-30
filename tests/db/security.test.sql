@@ -683,4 +683,73 @@ SET ROLE anon;
 SELECT test_helpers.denied('anon lee QR', $$SELECT * FROM public.qr_sources$$);
 RESET ROLE;
 
+-- ===== Eventos a Meta (0021) =====
+SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
+SET ROLE authenticated;
+SELECT test_helpers.denied('no guarda eventos que Meta no acepta para WhatsApp',
+  $$UPDATE public.accounts SET meta_stage_events = '{"4": "Lead"}' WHERE id = 'espacio-fx'$$);
+SELECT test_helpers.denied('no guarda etapas inventadas',
+  $$UPDATE public.accounts SET meta_stage_events = '{"9": "Purchase"}' WHERE id = 'espacio-fx'$$);
+SELECT test_helpers.affects('owner prende Meta y elige eventos por etapa',
+  $$UPDATE public.accounts SET meta_events_enabled = true,
+    meta_stage_events = '{"nuevo": "LeadSubmitted", "4": "QualifiedLead", "ganado": "Purchase"}'
+    WHERE id = 'espacio-fx'$$, 1);
+SELECT test_helpers.denied('el navegador no escribe en la cola de Meta',
+  $$INSERT INTO public.meta_events (account_id, lead_id, event_name, origin)
+    VALUES ('espacio-fx', 'qr-lead', 'Purchase', 'flujo')$$);
+RESET ROLE;
+
+SET ROLE service_role;
+SELECT test_helpers.affects('lead nuevo de anuncio',
+  $$INSERT INTO public.leads (id, account_id, name, phone, ctwa_clid)
+    VALUES ('meta-ad', 'espacio-fx', 'Anuncio', '+520000000010', 'clid-1')$$, 1);
+SELECT test_helpers.affects('lead nuevo sin anuncio',
+  $$INSERT INTO public.leads (id, account_id, name, phone)
+    VALUES ('meta-org', 'espacio-fx', 'Orgánico', '+520000000011')$$, 1);
+SELECT test_helpers.eq('sólo el lead de anuncio entra a la cola',
+  (SELECT string_agg(lead_id || ':' || event_name, ',') FROM public.meta_events), 'meta-ad:LeadSubmitted');
+UPDATE public.leads SET stage = 2 WHERE id = 'meta-ad';
+UPDATE public.leads SET stage = 4 WHERE id IN ('meta-ad', 'meta-org');
+UPDATE public.leads SET stage = 2 WHERE id = 'meta-ad';
+UPDATE public.leads SET stage = 4 WHERE id = 'meta-ad';
+SELECT test_helpers.eq('P4 avisa una sola vez aunque regrese y vuelva',
+  (SELECT count(*) FROM public.meta_events WHERE event_name = 'QualifiedLead'), 1::bigint);
+UPDATE public.leads SET stage = 7, outcome = 'no_califica' WHERE id = 'meta-ad';
+SELECT test_helpers.eq('no califica no es venta',
+  (SELECT count(*) FROM public.meta_events WHERE event_name = 'Purchase'), 0::bigint);
+RESET ROLE;
+-- Mover al lead desde el navegador (pipeline) también avisa.
+SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
+SET ROLE authenticated;
+SELECT test_helpers.affects('el asesor marca la venta como ganada',
+  $$UPDATE public.leads SET outcome = 'ganado' WHERE id = 'meta-ad'$$, 1);
+RESET ROLE;
+SET ROLE service_role;
+SELECT test_helpers.eq('ganado avisa la compra',
+  (SELECT detail FROM public.meta_events WHERE event_name = 'Purchase'), 'Llegó a P7 · Ganado');
+SELECT test_helpers.denied('un evento no apunta a un lead de otra subcuenta',
+  $$INSERT INTO public.meta_events (account_id, lead_id, event_name, origin)
+    VALUES ('mia', 'meta-ad', 'ViewContent', 'flujo')$$);
+UPDATE public.accounts SET meta_events_enabled = false WHERE id = 'espacio-fx';
+INSERT INTO public.leads (id, account_id, name, phone, ctwa_clid)
+  VALUES ('meta-off', 'espacio-fx', 'Apagado', '+520000000012', 'clid-2');
+SELECT test_helpers.eq('apagado no encola',
+  (SELECT count(*) FROM public.meta_events WHERE lead_id = 'meta-off'), 0::bigint);
+RESET ROLE;
+
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.affects('el equipo ve la cola de su cuenta', $$SELECT 1 FROM public.meta_events$$, 3);
+SELECT test_helpers.denied('member no cambia la cola', $$UPDATE public.meta_events SET status = 'enviado'$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.eq('intruso: eventos ajenos', (SELECT count(*) FROM public.meta_events), 0::bigint);
+RESET ROLE;
+
+SET ROLE anon;
+SELECT test_helpers.denied('anon lee la cola de Meta', $$SELECT * FROM public.meta_events$$);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'

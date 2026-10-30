@@ -35,6 +35,7 @@ import {
   toQrSource,
 } from "./db";
 import { newQrCode } from "./qr";
+import { parseStageEvents } from "./meta";
 import type { Json } from "@/integrations/supabase/types";
 
 interface State {
@@ -279,6 +280,12 @@ export function CrmProvider({ children }: { children: ReactNode }) {
               : {}),
             ...(patch.businessHours
               ? { business_hours: patch.businessHours as unknown as Json }
+              : {}),
+            ...(patch.metaEventsEnabled !== undefined
+              ? { meta_events_enabled: patch.metaEventsEnabled }
+              : {}),
+            ...(patch.metaStageEvents
+              ? { meta_stage_events: parseStageEvents(patch.metaStageEvents) as Json }
               : {}),
           })
           .eq("id", id);
