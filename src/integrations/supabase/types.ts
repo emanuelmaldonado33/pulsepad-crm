@@ -66,6 +66,8 @@ export type Database = {
           created_by_user_id: string | null
           id: string
           initials: string
+          meta_events_enabled: boolean
+          meta_stage_events: Json
           name: string
           product: string
           public_whatsapp: string
@@ -86,6 +88,8 @@ export type Database = {
           created_by_user_id?: string | null
           id: string
           initials: string
+          meta_events_enabled?: boolean
+          meta_stage_events?: Json
           name: string
           product?: string
           public_whatsapp?: string
@@ -106,6 +110,8 @@ export type Database = {
           created_by_user_id?: string | null
           id?: string
           initials?: string
+          meta_events_enabled?: boolean
+          meta_stage_events?: Json
           name?: string
           product?: string
           public_whatsapp?: string
@@ -496,6 +502,72 @@ export type Database = {
             columns: ["account_id"]
             isOneToOne: false
             referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_events: {
+        Row: {
+          account_id: string
+          attempts: number
+          created_at: string
+          detail: string
+          event_name: string
+          id: string
+          last_error: string | null
+          lead_id: string
+          locked_until: string | null
+          next_attempt_at: string
+          origin: string
+          sent_at: string | null
+          status: string
+          value: number | null
+        }
+        Insert: {
+          account_id: string
+          attempts?: number
+          created_at?: string
+          detail?: string
+          event_name: string
+          id?: string
+          last_error?: string | null
+          lead_id: string
+          locked_until?: string | null
+          next_attempt_at?: string
+          origin: string
+          sent_at?: string | null
+          status?: string
+          value?: number | null
+        }
+        Update: {
+          account_id?: string
+          attempts?: number
+          created_at?: string
+          detail?: string
+          event_name?: string
+          id?: string
+          last_error?: string | null
+          lead_id?: string
+          locked_until?: string | null
+          next_attempt_at?: string
+          origin?: string
+          sent_at?: string | null
+          status?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]

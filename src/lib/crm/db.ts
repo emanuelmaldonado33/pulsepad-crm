@@ -1,5 +1,6 @@
 import type { Database } from "@/integrations/supabase/types";
 import type { BusinessHours, Enrollment, Flow } from "./flows";
+import { parseStageEvents } from "./meta";
 import type { Account, Appointment, Lead, Member, Message, QrSource } from "./types";
 
 type T = Database["public"]["Tables"];
@@ -29,6 +30,8 @@ export const toAccount = (r: AccountRow): Account => ({
     ? r.business_hours
     : {}) as BusinessHours,
   publicWhatsapp: r.public_whatsapp ?? "",
+  metaEventsEnabled: r.meta_events_enabled ?? false,
+  metaStageEvents: parseStageEvents(r.meta_stage_events),
 });
 
 export const toMember = (r: T["account_memberships"]["Row"]): Member => ({

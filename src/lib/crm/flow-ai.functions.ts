@@ -5,6 +5,7 @@ import { STAGES } from "./types";
 import { TAG_RULES } from "./automation";
 import { LEAD_INTENTS, MESSAGE_INTENTS, VARIABLES } from "./flows";
 import { extractJson } from "./flow-io";
+import { META_EVENTS } from "./meta";
 
 /** Pide a Claude un borrador de flujo en JSON. La validación final ocurre en el cliente con parseFlow. */
 export const generateFlowDraft = createServerFn({ method: "POST" })
@@ -41,6 +42,11 @@ Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
     { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off" | "exit_flows" | "opt_out", "value": string },   // bot_on/bot_off/exit_flows (sacar de los demás flujos)/opt_out (dar de baja): value ""
     { "type": "assign", "mode": "round_robin", "userIds": [] },   // asigna un asesor por turnos entre todo el equipo disponible
     { "type": "notify", "to": ["assigned" | "admins"], "text": string, "whatsapp": boolean },   // aviso interno al equipo con resumen de la IA y enlace al chat
+    { "type": "meta_event", "event": ${Object.keys(META_EVENTS)
+      .map((e) => `"${e}"`)
+      .join(
+        " | ",
+      )}, "value": number | null },   // avisa a Meta que el lead de anuncio avanzó (Purchase = venta, value = monto o null para usar el presupuesto)
     { "type": "condition", "rule": Regla, "yes": [pasos], "no": [pasos] },   // rama sí/no; al terminar la rama sigue el paso de abajo
     { "type": "end" }   // termina el flujo para ese lead
   ]

@@ -25,6 +25,7 @@ import {
   type NotifyTarget,
   type WaTemplate,
 } from "./flows";
+import { sendFlowMetaEvent } from "./meta.server";
 import type { Account, Lead } from "./types";
 
 type Sb = SupabaseClient<Database>;
@@ -390,6 +391,17 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           );
         } else
           await event("aviso", "Aviso sin destinatarios (nadie asignado o sin administradores)");
+      } else if (st.type === "meta_event") {
+        const skipped = await sendFlowMetaEvent(sb, {
+          accountId: account.id,
+          leadId: lead.id,
+          ctwaClid: lr.ctwa_clid,
+          enabled: ar.meta_events_enabled ?? false,
+          eventName: st.event,
+          value: st.value,
+          flowName: flow.name,
+        });
+        if (skipped) await event("meta", skipped);
       } else if (st.type === "condition") {
         const ok = evaluateCondition(st.rule, {
           lead,
