@@ -284,42 +284,42 @@ export type Database = {
       flows: {
         Row: {
           account_id: string
-          allow_reentry: boolean
           active: boolean
+          allow_reentry: boolean
           created_at: string
           id: string
           name: string
           steps: Json
           stop_on_reply: boolean
+          trigger_config: Json
           trigger_type: string
           trigger_value: string
-          trigger_config: Json
         }
         Insert: {
           account_id: string
-          allow_reentry?: boolean
           active?: boolean
+          allow_reentry?: boolean
           created_at?: string
           id?: string
           name: string
           steps?: Json
           stop_on_reply?: boolean
+          trigger_config?: Json
           trigger_type?: string
           trigger_value?: string
-          trigger_config?: Json
         }
         Update: {
           account_id?: string
-          allow_reentry?: boolean
           active?: boolean
+          allow_reentry?: boolean
           created_at?: string
           id?: string
           name?: string
           steps?: Json
           stop_on_reply?: boolean
+          trigger_config?: Json
           trigger_type?: string
           trigger_value?: string
-          trigger_config?: Json
         }
         Relationships: [
           {
@@ -695,8 +695,12 @@ export type Database = {
     }
     Functions: {
       assign_lead: {
-        Args: { p_lead_id: string; p_round_robin: boolean; p_user_ids: string[] }
-        Returns: string | null
+        Args: {
+          p_lead_id: string
+          p_round_robin: boolean
+          p_user_ids: string[]
+        }
+        Returns: string
       }
       claim_inbound_message: {
         Args: {
@@ -706,6 +710,23 @@ export type Database = {
           p_stale_after?: string
         }
         Returns: string
+      }
+      flow_intent_label: { Args: { p: string }; Returns: string }
+      flow_is_opt_out: { Args: { p: string }; Returns: boolean }
+      flow_lead_matches: {
+        Args: { p_config: Json; p_stage: number; p_tags: string[] }
+        Returns: boolean
+      }
+      flow_norm: { Args: { p: string }; Returns: string }
+      flow_try_enroll: {
+        Args: {
+          p_account_id: string
+          p_allow_reentry: boolean
+          p_flow_id: string
+          p_lead_id: string
+          p_reason: string
+        }
+        Returns: undefined
       }
       has_account_role: {
         Args: { p_account_id: string; p_roles: string[] }
