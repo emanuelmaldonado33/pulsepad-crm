@@ -1,7 +1,7 @@
 import type { Material, WaTemplate } from "./flows";
 
 const GRAPH_API_VERSION = process.env["WHATSAPP_GRAPH_API_VERSION"] ?? "v26.0";
-const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
+export const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
 
 export const digits = (p: string) => p.replace(/\D/g, "");
 /** Mismo número aunque venga con/sin 521 (México) o prefijos: compara últimos 10 dígitos. */
