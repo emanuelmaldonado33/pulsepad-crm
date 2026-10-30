@@ -26,21 +26,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const PRIMARY_NAV = [
-  { to: "/", label: "Pipeline", icon: KanbanSquare },
-  { to: "/inbox", label: "Bandeja", icon: MessageCircle },
+  { to: "/", label: "Clientes", icon: KanbanSquare },
+  { to: "/inbox", label: "Mensajes", icon: MessageCircle },
   { to: "/citas", label: "Agenda", icon: CalendarDays },
 ] as const;
 
 const MORE_NAV = [
-  { to: "/simulador", label: "Simulador", icon: FlaskConical },
-  { to: "/flujos", label: "Flujos", icon: Workflow },
+  { to: "/simulador", label: "Probar el bot", icon: FlaskConical },
+  { to: "/flujos", label: "Seguimientos", icon: Workflow },
   { to: "/configuracion", label: "Configuración", icon: Settings2 },
 ] as const;
 
 export function BrandMark({ initials, size = 36 }: { initials: string; size?: number }) {
   return (
     <span
-      className="inline-flex items-center justify-center rounded-[28%] bg-primary font-display font-semibold tracking-tight text-primary-foreground shadow-soft ring-[0.5px] ring-hairline"
+      className="inline-flex items-center justify-center rounded-[28%] bg-primary font-display font-semibold tracking-tight text-primary-foreground shadow-soft ring-1 ring-hairline"
       style={{ width: size, height: size, fontSize: size * 0.38 }}
     >
       {initials}
@@ -76,10 +76,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="flex min-w-0 items-center gap-3 text-left">
                 <BrandMark initials={account.initials} size={32} />
                 <div className="min-w-0 leading-tight">
-                  <div className="truncate font-display text-[13px] font-semibold tracking-tight">
+                  <div className="truncate font-display text-sm font-semibold tracking-tight">
                     {account.name}
                   </div>
-                  <div className="hidden text-[11px] text-muted-foreground sm:block">{account.tagline}</div>
+                  <div className="hidden text-xs text-muted-foreground sm:block">
+                    {account.tagline}
+                  </div>
                 </div>
               </div>
             </SelectTrigger>
@@ -97,7 +99,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button
             variant="outline"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="h-11 w-11 shrink-0"
             onClick={() => setNewOpen(true)}
             aria-label="Nueva subcuenta"
             title="Nueva subcuenta"
@@ -109,12 +111,12 @@ export function AppShell({ children }: { children: ReactNode }) {
           <nav
             ref={navRef}
             aria-label="Navegación principal"
-            className="relative ml-2 hidden items-center gap-0.5 rounded-full bg-muted p-[3px] ring-[0.5px] ring-hairline md:flex"
+            className="relative ml-2 hidden items-center gap-0.5 rounded-full bg-muted p-[3px] ring-1 ring-hairline md:flex"
           >
             {pill && (
               <span
                 aria-hidden
-                className="absolute top-[3px] bottom-[3px] rounded-full bg-popover shadow-soft ring-[0.5px] ring-hairline transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+                className="absolute top-[3px] bottom-[3px] rounded-full bg-popover shadow-soft ring-1 ring-hairline transition-all duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
                 style={{ left: pill.left, width: pill.width }}
               />
             )}
@@ -123,7 +125,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 key={to}
                 to={to}
                 activeOptions={{ exact: to === "/" }}
-                className="press relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[13px] font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground"
+                className="press relative z-10 flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-300 hover:text-foreground"
                 activeProps={{ className: "!text-foreground" }}
               >
                 <Icon className="h-4 w-4 [[data-status=active]_&]:text-primary" />
@@ -136,7 +138,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant={MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "secondary" : "ghost"}
+                  variant={
+                    MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "secondary" : "ghost"
+                  }
                   size="sm"
                   aria-label="Más secciones"
                 >
@@ -180,7 +184,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             key={to}
             to={to}
             activeOptions={{ exact: to === "/" }}
-            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium text-muted-foreground"
+            className="flex min-h-14 flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-medium text-muted-foreground"
             activeProps={{ className: "!text-primary" }}
           >
             <Icon className="h-5 w-5" />
@@ -192,7 +196,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             <button
               type="button"
               aria-label="Más secciones"
-              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-[11px] font-medium ${MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "text-primary" : "text-muted-foreground"}`}
+              className={`flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-xl px-1 text-xs font-medium ${MORE_NAV.some((item) => pathname.startsWith(item.to)) ? "text-primary" : "text-muted-foreground"}`}
             >
               <MoreHorizontal className="h-5 w-5" />
               <span>Más</span>
@@ -222,7 +226,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 export function TagChip({ tag, onRemove }: { tag: string; onRemove?: () => void }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground ring-[0.5px] ring-hairline transition-colors">
+    <span className="inline-flex items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground ring-1 ring-hairline transition-colors">
       #{tag}
       {onRemove && (
         <button

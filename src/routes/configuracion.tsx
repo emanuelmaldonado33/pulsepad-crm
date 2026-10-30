@@ -147,7 +147,7 @@ function AiConfig() {
           ],
         ].map(([k, v]) => (
           <div key={k} className="rounded-xl border bg-card p-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
             <div className="font-display text-xl font-semibold">{v}</div>
           </div>
         ))}

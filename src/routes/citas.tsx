@@ -150,7 +150,7 @@ function Citas() {
               ["Etapa", stageLabel(lead)],
             ].map(([k, v]) => (
               <div key={k} className="rounded-xl bg-muted/70 p-3">
-                <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</div>
+                <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
                 <div className="font-display text-base font-semibold">{v}</div>
               </div>
             ))}
@@ -177,7 +177,7 @@ function Citas() {
               <div className="space-y-2">
                 {lead.messages.slice(-4).map((m) => (
                   <div key={m.id} className="rounded-lg bg-muted/60 px-3 py-2 text-sm">
-                    <span className="mr-1 text-[10px] font-semibold uppercase text-muted-foreground">
+                    <span className="mr-1 text-xs font-semibold uppercase text-muted-foreground">
                       {m.from}
                     </span>
                     {m.text}

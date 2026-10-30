@@ -95,13 +95,13 @@ function Inbox() {
       .toUpperCase();
 
   return (
-    <div
-      className="grid h-[calc(100dvh-8rem)] min-h-0 flex-1 grid-cols-1 md:h-[calc(100dvh-4rem)] md:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_340px]"
-    >
-      <aside className={`overflow-y-auto border-r-[0.5px] border-hairline ${mobileShowThread ? "hidden md:block" : ""}`}>
+    <div className="grid h-[calc(100dvh-8rem)] min-h-0 flex-1 grid-cols-1 md:h-[calc(100dvh-4rem)] md:grid-cols-[320px_1fr] xl:grid-cols-[320px_1fr_340px]">
+      <aside
+        className={`overflow-y-auto border-r-[0.5px] border-hairline ${mobileShowThread ? "hidden md:block" : ""}`}
+      >
         <div className="px-4 pb-3 pt-4 sm:px-5">
           <div className="flex items-center justify-between">
-            <h1 className="font-display text-xl font-semibold">Bandeja</h1>
+            <h1 className="font-display text-xl font-semibold">Mensajes</h1>
             <span className="text-xs text-muted-foreground">{sorted.length} conversaciones</span>
           </div>
           <div className="relative mt-3">
@@ -115,11 +115,13 @@ function Inbox() {
             />
           </div>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1" aria-label="Filtrar conversaciones">
-            {([
-              ["all", "Todas", sorted.length],
-              ["reply", "Por responder", needsReplyCount],
-              ["advisor", "Con asesor", advisorCount],
-            ] as const).map(([value, label, count]) => (
+            {(
+              [
+                ["all", "Todas", sorted.length],
+                ["reply", "Por responder", needsReplyCount],
+                ["advisor", "Con asesor", advisorCount],
+              ] as const
+            ).map(([value, label, count]) => (
               <button
                 key={value}
                 type="button"
@@ -128,7 +130,9 @@ function Inbox() {
                 className={`inline-flex h-9 shrink-0 items-center gap-2 rounded-full px-3 text-xs font-medium transition-colors ${filter === value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}
               >
                 {label}
-                <span className={`tabular rounded-full px-1.5 py-0.5 text-[10px] ${filter === value ? "bg-primary-foreground/20 text-primary-foreground" : "bg-background"}`}>
+                <span
+                  className={`tabular rounded-full px-1.5 py-0.5 text-xs ${filter === value ? "bg-primary-foreground/20 text-primary-foreground" : "bg-background"}`}
+                >
                   {count}
                 </span>
               </button>
@@ -145,22 +149,22 @@ function Inbox() {
                 className={`press flex w-full items-center gap-3 rounded-[12px] px-3 py-2.5 text-left transition-colors duration-200 ${active ? "bg-primary text-primary-foreground" : "hover:bg-accent"}`}
               >
                 <span
-                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[13px] font-semibold ${active ? "bg-primary-foreground/20" : "bg-linear-to-b from-muted-foreground/40 to-muted-foreground/60 text-background"}`}
+                  className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${active ? "bg-primary-foreground/20" : "bg-linear-to-b from-muted-foreground/40 to-muted-foreground/60 text-background"}`}
                 >
                   {initials(l.name)}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-baseline gap-2">
-                    <span className="truncate text-[14px] font-semibold">{l.name}</span>
+                    <span className="truncate text-base font-semibold">{l.name}</span>
                     <span
-                      className={`tabular ml-auto shrink-0 text-[11px] ${active ? "text-primary-foreground/75" : "text-muted-foreground"}`}
+                      className={`tabular ml-auto shrink-0 text-xs ${active ? "text-primary-foreground/75" : "text-muted-foreground"}`}
                       suppressHydrationWarning
                     >
                       {ago(l.messages.at(-1)?.at)}
                     </span>
                   </span>
                   <span
-                    className={`flex items-center gap-1.5 text-[13px] ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}
+                    className={`flex items-center gap-1.5 text-sm ${active ? "text-primary-foreground/80" : "text-muted-foreground"}`}
                   >
                     {!l.botActive && (
                       <span
@@ -176,7 +180,9 @@ function Inbox() {
           })}
           {visibleLeads.length === 0 && (
             <p className="px-4 py-10 text-center text-sm text-muted-foreground">
-              {query ? "No hay coincidencias. Prueba otra búsqueda." : "No hay conversaciones en esta vista."}
+              {query
+                ? "No hay coincidencias. Prueba otra búsqueda."
+                : "No hay conversaciones en esta vista."}
             </p>
           )}
         </div>
@@ -195,7 +201,7 @@ function Inbox() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-linear-to-b from-muted-foreground/40 to-muted-foreground/60 text-[11px] font-semibold text-background">
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-linear-to-b from-muted-foreground/40 to-muted-foreground/60 text-xs font-semibold text-background">
               {initials(lead.name)}
             </span>
             <div className="min-w-0 leading-tight">
@@ -253,21 +259,21 @@ function Inbox() {
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 placeholder={lead.botActive ? "Mensaje (el bot sigue activo)" : "Mensaje"}
-                className="h-9 flex-1 bg-transparent text-[15px] outline-none placeholder:text-muted-foreground"
+                className="h-11 flex-1 bg-transparent text-base outline-none placeholder:text-muted-foreground"
               />
               <button
                 type="submit"
                 aria-label="Enviar"
                 disabled={!text.trim()}
-                className="press flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-0"
+                className="press flex h-11 w-11 items-center justify-center rounded-full bg-primary text-primary-foreground transition-opacity disabled:opacity-40"
               >
-                <ArrowUp className="h-4 w-4" strokeWidth={2.5} />
+                <ArrowUp className="h-5 w-5" strokeWidth={2.5} />
               </button>
             </div>
           </form>
         </section>
       ) : (
-        <div className="flex items-center justify-center text-[13px] text-muted-foreground">
+        <div className="flex items-center justify-center text-sm text-muted-foreground">
           Sin conversaciones
         </div>
       )}

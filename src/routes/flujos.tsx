@@ -102,7 +102,9 @@ function Flows() {
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <Workflow className="h-6 w-6 text-primary" />
         <div className="min-w-0 flex-1">
-          <h1 className="font-display text-2xl font-semibold">Flujos · {account.name}</h1>
+          <h1 className="font-display text-2xl font-semibold">
+            Seguimientos automáticos · {account.name}
+          </h1>
           <p className="text-sm text-muted-foreground">
             Seguimientos automáticos paso a paso. Se ejecutan en el servidor 24/7, aunque nadie
             tenga el CRM abierto.
@@ -280,7 +282,7 @@ function Stat({ k, v }: { k: string; v: string }) {
   return (
     <div className="text-center">
       <div className="font-display text-lg font-semibold">{v}</div>
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{k}</div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
     </div>
   );
 }
@@ -386,7 +388,7 @@ function Library({
             <div className="text-sm font-semibold">
               {m.name}{" "}
               {m.storagePath && (
-                <span className="ml-1 rounded bg-secondary px-1.5 py-0.5 text-[10px] font-medium">
+                <span className="ml-1 rounded bg-secondary px-1.5 py-0.5 text-xs font-medium">
                   Subido
                 </span>
               )}

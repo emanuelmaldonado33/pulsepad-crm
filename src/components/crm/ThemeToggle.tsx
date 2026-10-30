@@ -36,14 +36,11 @@ export function ThemeToggle({ className }: { className?: string }) {
     <div
       role="radiogroup"
       aria-label="Apariencia"
-      className={cn(
-        "relative flex rounded-full bg-muted p-[3px] ring-[0.5px] ring-hairline",
-        className,
-      )}
+      className={cn("relative flex rounded-full bg-muted p-[3px] ring-1 ring-hairline", className)}
     >
       <span
         aria-hidden
-        className="absolute top-[3px] bottom-[3px] w-7 rounded-full bg-popover shadow-soft ring-[0.5px] ring-hairline transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
+        className="absolute top-[3px] bottom-[3px] w-7 rounded-full bg-popover shadow-soft ring-1 ring-hairline transition-transform duration-500 ease-[cubic-bezier(0.32,0.72,0,1)]"
         style={{ transform: `translateX(${idx * 28}px)` }}
       />
       {OPTIONS.map(({ v, icon: Icon, label }) => (

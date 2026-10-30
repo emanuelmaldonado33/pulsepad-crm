@@ -172,7 +172,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
 
       <section className="rounded-xl border bg-card p-3">
         <label className="block">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">
             Asesor asignado
           </span>
           {readOnly ? (
@@ -208,9 +208,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
       <LeadHistory leadId={lead.id} />
 
       <section>
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Etiquetas
-        </div>
+        <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Etiquetas</div>
         <div className="flex flex-wrap gap-1.5">
           {lead.tags.length === 0 && (
             <span className="text-xs text-muted-foreground">Sin etiquetas</span>
@@ -245,7 +243,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
                   key={t}
                   title={TAG_RULES[t]?.label ?? "Etiqueta descriptiva"}
                   onClick={() => addTag(t)}
-                  className="rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                  className="rounded-full border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:border-primary hover:text-primary"
                 >
                   +{t}
                 </button>
@@ -256,7 +254,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
       </section>
 
       <section>
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
           Notas del asesor
         </div>
         {readOnly ? (
@@ -277,7 +275,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
 function Kv({ k, v }: { k: string; v: string }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
       <div className="font-display text-sm font-semibold">{v}</div>
     </div>
   );
@@ -302,9 +300,7 @@ function LeadHistory({ leadId }: { leadId: string }) {
   if (!events.length) return null;
   return (
     <section>
-      <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-        Historial
-      </div>
+      <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Historial</div>
       <ul className="space-y-1 text-xs">
         {events.map((e) => (
           <li key={e.id} className="flex gap-2">

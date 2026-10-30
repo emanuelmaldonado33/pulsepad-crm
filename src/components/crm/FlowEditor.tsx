@@ -615,7 +615,7 @@ function StepCard({
   const Icon = ICON[st.type];
   return (
     <li className={`relative rounded-xl border bg-card ${depth > 0 ? "p-2 pl-9" : "p-3 pl-10"}`}>
-      <span className="absolute left-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-[10px] font-bold">
+      <span className="absolute left-3 top-3 flex h-5 w-5 items-center justify-center rounded-full bg-secondary text-xs font-bold">
         {index + 1}
       </span>
       <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
@@ -624,7 +624,7 @@ function StepCard({
           <Button
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+            className="h-10 w-10"
             onClick={() => move(-1)}
             aria-label="Subir"
           >
@@ -633,7 +633,7 @@ function StepCard({
           <Button
             size="icon"
             variant="ghost"
-            className="h-7 w-7"
+            className="h-10 w-10"
             onClick={() => move(1)}
             aria-label="Bajar"
           >
@@ -642,7 +642,7 @@ function StepCard({
           <Button
             size="icon"
             variant="ghost"
-            className="h-7 w-7 text-destructive"
+            className="h-10 w-10 text-destructive"
             onClick={remove}
             aria-label="Eliminar paso"
           >
@@ -663,7 +663,7 @@ function StepCard({
                 key={v}
                 type="button"
                 onClick={() => set({ ...st, text: st.text + `{{${v}}}` })}
-                className="rounded border border-dashed px-1.5 py-0.5 font-mono text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                className="rounded border border-dashed px-1.5 py-0.5 font-mono text-xs text-muted-foreground hover:border-primary hover:text-primary"
               >{`{{${v}}}`}</button>
             ))}
           </div>

@@ -135,7 +135,9 @@ export function ImportFlowDialog({
         <DialogHeader>
           <DialogTitle>Importar flujo</DialogTitle>
           <DialogDescription>
-            Importa JSON exportado desde Pulse o una definición compatible con sus pasos. Los Snapshots o definiciones de GoHighLevel no se importan directamente; requieren conversión y revisión. El flujo se guarda inactivo.
+            Importa JSON exportado desde Pulse o una definición compatible con sus pasos. Los
+            Snapshots o definiciones de GoHighLevel no se importan directamente; requieren
+            conversión y revisión. El flujo se guarda inactivo.
           </DialogDescription>
         </DialogHeader>
         <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border-2 border-dashed p-4 text-sm hover:border-primary">

@@ -109,7 +109,7 @@ function Simulator() {
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="max-w-md text-center">
           <FlaskConical className="mx-auto h-10 w-10 text-primary" />
-          <h1 className="mt-3 text-2xl font-semibold">Playground de WhatsApp</h1>
+          <h1 className="mt-3 text-2xl font-semibold">Probar el bot</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Escribe como un prospecto de <b>{account.name}</b> con tus propias palabras. La IA
             entiende lenguaje natural, extrae presupuesto, enganche, plazo e intención, y mueve

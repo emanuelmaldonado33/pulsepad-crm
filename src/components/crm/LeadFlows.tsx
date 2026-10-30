@@ -32,7 +32,7 @@ export function LeadFlows({ leadId, testMode }: { leadId: string; testMode?: boo
 
   return (
     <section className="rounded-xl border bg-card p-3">
-      <div className="mb-2 flex items-center gap-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
         <Workflow className="h-3.5 w-3.5" /> Flujo activo
       </div>
       {active.length === 0 && (

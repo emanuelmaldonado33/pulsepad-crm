@@ -31,7 +31,7 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
             <div key={m.id} className={startGroup ? "mt-3" : "mt-[2px]"}>
               {newBlock && (
                 <div
-                  className="mb-3 mt-2 text-center text-[11px] font-medium text-muted-foreground"
+                  className="mb-3 mt-2 text-center text-xs font-medium text-muted-foreground"
                   suppressHydrationWarning
                 >
                   <span className="inline-block first-letter:uppercase">{day(m.at)}</span> ·{" "}
@@ -39,14 +39,14 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
                 </div>
               )}
               {startGroup && mine && (
-                <div className="mb-1 pr-3 text-right text-[11px] text-muted-foreground">
+                <div className="mb-1 pr-3 text-right text-xs text-muted-foreground">
                   {m.from === "bot" ? "Bot IA" : "Asesor"}
                 </div>
               )}
               <div className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                 <div
                   title={time(m.at)}
-                  className={`max-w-[72%] whitespace-pre-wrap break-words px-3.5 py-[7px] text-[15px] leading-[1.35] tracking-[-0.01em] ${
+                  className={`max-w-[72%] whitespace-pre-wrap break-words px-3.5 py-[7px] text-base leading-[1.35] tracking-[-0.01em] ${
                     mine
                       ? `rounded-[20px] bg-bubble-out text-bubble-out-foreground ${endGroup ? "rounded-br-[6px]" : ""} ${m.from === "asesor" ? "opacity-95 saturate-[0.8]" : ""}`
                       : `rounded-[20px] bg-bubble-in text-foreground ${endGroup ? "rounded-bl-[6px]" : ""}`
@@ -56,13 +56,13 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
                 </div>
               </div>
               {!mine && m.intent && m.intent in MESSAGE_INTENTS && (
-                <div className="mt-1 pl-1 text-[11px] text-muted-foreground">
+                <div className="mt-1 pl-1 text-xs text-muted-foreground">
                   IA: {MESSAGE_INTENTS[m.intent as MessageIntent].toLowerCase()}
                 </div>
               )}
               {endGroup && mine && m.waStatus && (
                 <div
-                  className={`mt-1 pr-1 text-right text-[11px] ${failed ? "text-destructive" : "text-muted-foreground"}`}
+                  className={`mt-1 pr-1 text-right text-xs ${failed ? "text-destructive" : "text-muted-foreground"}`}
                 >
                   {m.waStatus === "enviado" ? "Entregado" : failed ? "No enviado" : "Simulado"}
                 </div>

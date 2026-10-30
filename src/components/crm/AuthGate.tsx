@@ -72,7 +72,9 @@ function AuthScreen() {
         toast.error("No se pudo enviar el enlace. Verifica el correo e intenta de nuevo.");
         return;
       }
-      toast.success("Si el correo tiene una cuenta, recibirás un enlace para cambiar la contraseña.");
+      toast.success(
+        "Si el correo tiene una cuenta, recibirás un enlace para cambiar la contraseña.",
+      );
     } catch {
       toast.error("No se pudo enviar el enlace. Intenta de nuevo.");
     } finally {
@@ -115,7 +117,9 @@ function AuthScreen() {
           }}
         >
           <div className="space-y-1.5">
-            <label htmlFor="auth-email" className="text-sm font-medium">Correo electrónico</label>
+            <label htmlFor="auth-email" className="text-sm font-medium">
+              Correo electrónico
+            </label>
             <Input
               id="auth-email"
               type="email"
@@ -128,7 +132,9 @@ function AuthScreen() {
             />
           </div>
           <div className="space-y-1.5">
-            <label htmlFor="auth-password" className="text-sm font-medium">Contraseña</label>
+            <label htmlFor="auth-password" className="text-sm font-medium">
+              Contraseña
+            </label>
             <div className="relative">
               <Input
                 id="auth-password"
