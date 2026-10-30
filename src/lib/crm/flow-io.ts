@@ -10,6 +10,7 @@ import {
   type Flow,
   type FlowStep,
   type LeadNumberField,
+  type TemplateRef,
   type TriggerType,
   type WaitUnit,
 } from "./flows";
@@ -22,7 +23,13 @@ export function exportFlow(f: Flow, materialName: (id: string | null) => string 
   const out = (steps: FlowStep[]): unknown[] =>
     steps.map(({ id: _id, ...s }) =>
       s.type === "message"
-        ? { type: s.type, text: s.text, material: materialName(s.materialId) }
+        ? {
+            type: s.type,
+            text: s.text,
+            material: materialName(s.materialId),
+            ...(s.template ? { template: s.template } : {}),
+            ...(s.businessHours ? { businessHours: true } : {}),
+          }
         : s.type === "condition"
           ? { type: s.type, rule: s.rule, yes: out(s.yes), no: out(s.no) }
           : s,
@@ -93,6 +100,20 @@ export function parseTriggerConfig(type: TriggerType, raw: unknown): TriggerConf
   const tag = tagify(c["tag"]);
   if (tag) out.tag = tag;
   return out;
+}
+
+/** Plantilla de WhatsApp de un paso: nombre y idioma como los da Meta, y un texto por variable. */
+export function parseTemplateRef(v: unknown, at: string): TemplateRef | null {
+  if (v == null || v === "") return null;
+  const t = (typeof v === "object" && !Array.isArray(v) ? v : {}) as Record<string, unknown>;
+  const name = str(t["name"], 512).trim();
+  const language = str(t["language"], 15).trim();
+  if (!/^[a-z0-9_]+$/.test(name) || !/^[a-z]{2,3}(_[A-Za-z]{2,4})?$/.test(language))
+    throw new Error(`La plantilla de WhatsApp del paso ${at} no es válida`);
+  const params = (Array.isArray(t["params"]) ? t["params"] : [])
+    .slice(0, 20)
+    .map((p) => str(p, 1000));
+  return { name, language, params };
 }
 
 /**
@@ -181,8 +202,17 @@ export function parseFlow(
       const type = str(s["type"], 20);
       if (type === "message") {
         const text = str(s["text"], 4000).trim();
-        if (!text) throw new Error(`El paso ${at} es un mensaje vacío`);
-        return { id: sid(), type, text, materialId: findMat(s["material"] ?? s["materialId"]) };
+        const materialId = findMat(s["material"] ?? s["materialId"]);
+        if (!text && !materialId) throw new Error(`El paso ${at} es un mensaje vacío`);
+        const template = parseTemplateRef(s["template"], at);
+        return {
+          id: sid(),
+          type,
+          text,
+          materialId,
+          ...(template ? { template } : {}),
+          ...(s["businessHours"] === true ? { businessHours: true } : {}),
+        };
       }
       if (type === "wait" || type === "wait_appt") {
         const amount = Math.max(1, Math.min(10_000, Math.round(Number(s["amount"]) || 1)));
@@ -195,7 +225,12 @@ export function parseFlow(
           if (v == null) throw new Error(`El paso ${at} cambia a una etapa inválida`);
           return { id: sid(), type, action, value: v };
         }
-        if (action === "bot_on" || action === "bot_off")
+        if (
+          action === "bot_on" ||
+          action === "bot_off" ||
+          action === "exit_flows" ||
+          action === "opt_out"
+        )
           return { id: sid(), type, action, value: "" };
         if (action === "add_tag" || action === "remove_tag") {
           const v = tagify(s["value"]);

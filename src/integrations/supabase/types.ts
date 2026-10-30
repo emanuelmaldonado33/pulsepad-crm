@@ -61,6 +61,7 @@ export type Database = {
           auto_pause_bot: boolean
           brand: string
           brand_foreground: string
+          business_hours: Json
           created_at: string
           created_by_user_id: string | null
           id: string
@@ -79,6 +80,7 @@ export type Database = {
           auto_pause_bot?: boolean
           brand: string
           brand_foreground: string
+          business_hours?: Json
           created_at?: string
           created_by_user_id?: string | null
           id: string
@@ -97,6 +99,7 @@ export type Database = {
           auto_pause_bot?: boolean
           brand?: string
           brand_foreground?: string
+          business_hours?: Json
           created_at?: string
           created_by_user_id?: string | null
           id?: string
@@ -386,6 +389,8 @@ export type Database = {
           intent: string | null
           name: string
           notes: string
+          opt_out_reason: string | null
+          opted_out_at: string | null
           outcome: string | null
           phone: string
           source: string
@@ -408,6 +413,8 @@ export type Database = {
           intent?: string | null
           name: string
           notes?: string
+          opt_out_reason?: string | null
+          opted_out_at?: string | null
           outcome?: string | null
           phone?: string
           source?: string
@@ -430,6 +437,8 @@ export type Database = {
           intent?: string | null
           name?: string
           notes?: string
+          opt_out_reason?: string | null
+          opted_out_at?: string | null
           outcome?: string | null
           phone?: string
           source?: string
@@ -634,6 +643,47 @@ export type Database = {
             foreignKeyName: "whatsapp_channels_account_id_fkey"
             columns: ["account_id"]
             isOneToOne: true
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      whatsapp_templates: {
+        Row: {
+          account_id: string
+          body: string
+          category: string
+          header_format: string | null
+          language: string
+          name: string
+          params: string[]
+          synced_at: string
+        }
+        Insert: {
+          account_id: string
+          body?: string
+          category?: string
+          header_format?: string | null
+          language: string
+          name: string
+          params?: string[]
+          synced_at?: string
+        }
+        Update: {
+          account_id?: string
+          body?: string
+          category?: string
+          header_format?: string | null
+          language?: string
+          name?: string
+          params?: string[]
+          synced_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "whatsapp_templates_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
             referencedRelation: "accounts"
             referencedColumns: ["id"]
           },

@@ -4,9 +4,17 @@ import type { FlowStep } from "./flows";
 
 const dispatchMessage = vi.fn(async (_: unknown) => ({}));
 const sendInternalWhatsApp = vi.fn(async (..._: unknown[]) => "enviado");
+const dispatchTemplate = vi.fn(async (_: unknown) => ({
+  status: "enviado",
+  error: null as string | null,
+}));
+// null = simulación (sin canal); un objeto = canal real de WhatsApp.
+const sendingChannel = vi.fn(async (..._: unknown[]): Promise<object | null> => null);
 vi.mock("./whatsapp.server", () => ({
   dispatchMessage: (a: unknown) => dispatchMessage(a),
+  dispatchTemplate: (a: unknown) => dispatchTemplate(a),
   sendInternalWhatsApp: (...a: unknown[]) => sendInternalWhatsApp(...a),
+  sendingChannel: (...a: unknown[]) => sendingChannel(...a),
 }));
 
 const { runEnrollment, notifyRecipients, notifyBody } = await import("./flow-runner.server");
@@ -313,5 +321,232 @@ describe("entrega al asesor", () => {
     );
     expect(body).toContain("Atiende a Carla");
     expect(body).toContain("«hola»\n«¿precio?»");
+  });
+});
+
+describe("reglas de WhatsApp", () => {
+  const HOUR = 3_600_000;
+  function run(
+    steps: FlowStep[],
+    opts: {
+      lastLeadMessageAt?: string | null | undefined;
+      channel?: boolean;
+      hours?: unknown;
+      template?: Record<string, unknown> | null;
+      optedOut?: boolean;
+    } = {},
+  ) {
+    sendingChannel.mockImplementation(async () => (opts.channel ? { phone_number_id: "1" } : null));
+    const sb = fakeSupabase((q: FakeQuery) => {
+      if (
+        q.table === "flow_enrollments" &&
+        q.op === "update" &&
+        q.filters.some((f) => f[0] === "or")
+      )
+        return {
+          data: {
+            id: "e1",
+            flow_id: "f1",
+            lead_id: "l1",
+            account_id: "acc",
+            current_node: null,
+            current_step: 0,
+          },
+        };
+      if (q.table === "flow_enrollments" && q.op === "select")
+        return { data: { status: "active", replied: false, advisor_replied: false } };
+      if (
+        q.table === "flow_enrollments" &&
+        q.op === "update" &&
+        q.filters.some((f) => f[0] === "neq")
+      )
+        return { data: [{ id: "otra" }] };
+      if (q.table === "flows")
+        return { data: { id: "f1", account_id: "acc", name: "Catálogo", steps } };
+      if (q.table === "leads" && q.op === "select")
+        return {
+          data: {
+            id: "l1",
+            account_id: "acc",
+            name: "Ana López",
+            stage: 2,
+            tags: [],
+            phone: "+525511112222",
+            source: "WhatsApp",
+            bot_active: true,
+            opted_out_at: opts.optedOut ? new Date().toISOString() : null,
+          },
+        };
+      if (q.table === "accounts")
+        return { data: { id: "acc", name: "Espacio FX", business_hours: opts.hours ?? {} } };
+      if (q.table === "appointments" || q.table === "materials") return { data: [] };
+      if (q.table === "account_memberships") return { data: [] };
+      if (q.table === "messages" && q.op === "select")
+        return {
+          data:
+            opts.lastLeadMessageAt === undefined ? null : { created_at: opts.lastLeadMessageAt },
+        };
+      if (q.table === "messages") return { data: { id: "m" } };
+      if (q.table === "whatsapp_templates") return { data: opts.template ?? null };
+      return {};
+    });
+    const enrUpdates = () =>
+      sb.calls
+        .filter((c) => c.table === "flow_enrollments" && c.op === "update")
+        .slice(1)
+        .map((c) => ({ payload: c.payload as Record<string, unknown>, filters: c.filters }));
+    const sent = () =>
+      sb.calls
+        .filter((c) => c.table === "messages" && c.op === "insert")
+        .map((c) => (c.payload as { body: string }).body);
+    const events = () =>
+      sb.calls
+        .filter((c) => c.table === "lead_events")
+        .map((c) => (c.payload as { body: string }).body);
+    return { sb, client: sb.client as never, enrUpdates, sent, events };
+  }
+
+  beforeEach(() => {
+    dispatchMessage.mockClear();
+    dispatchTemplate.mockClear();
+  });
+
+  const msg = (extra: Partial<Extract<FlowStep, { type: "message" }>> = {}): FlowStep => ({
+    id: "m1",
+    type: "message",
+    text: "Hola {{nombre}}",
+    materialId: null,
+    ...extra,
+  });
+
+  it("con la ventana abierta envía el texto normal", async () => {
+    const t = run([msg()], {
+      channel: true,
+      lastLeadMessageAt: new Date(Date.now() - 2 * HOUR).toISOString(),
+    });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual(["Hola Ana"]);
+    expect(dispatchMessage).toHaveBeenCalledTimes(1);
+    expect(dispatchTemplate).not.toHaveBeenCalled();
+  });
+
+  it("con la ventana cerrada y sin plantilla no envía y lo anota en el historial", async () => {
+    const t = run([msg(), { id: "tag", type: "action", action: "add_tag", value: "x" }], {
+      channel: true,
+      lastLeadMessageAt: new Date(Date.now() - 30 * HOUR).toISOString(),
+    });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual([]);
+    expect(dispatchMessage).not.toHaveBeenCalled();
+    expect(t.events()[0]).toMatch(/más de 24 h/);
+    // El flujo sigue con el paso de abajo.
+    expect(t.enrUpdates().at(-1)!.payload).toMatchObject({ status: "completed" });
+  });
+
+  it("si el lead nunca escribió, la ventana está cerrada", async () => {
+    const t = run([msg()], { channel: true, lastLeadMessageAt: undefined });
+    await runEnrollment(t.client, "e1");
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it("con la ventana cerrada usa la plantilla del paso con sus variables", async () => {
+    const t = run(
+      [
+        msg({
+          template: {
+            name: "seguimiento",
+            language: "es_MX",
+            params: ["{{nombre}}", "{{proyecto}}"],
+          },
+        }),
+      ],
+      {
+        channel: true,
+        lastLeadMessageAt: new Date(Date.now() - 30 * HOUR).toISOString(),
+        template: {
+          name: "seguimiento",
+          language: "es_MX",
+          category: "MARKETING",
+          body: "Hola {{1}}, ¿sigues interesado en {{2}}?",
+          header_format: null,
+          params: ["1", "2"],
+        },
+      },
+    );
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual(["Hola Ana, ¿sigues interesado en Espacio FX?"]);
+    expect(dispatchTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ values: ["Ana", "Espacio FX"] }),
+    );
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+
+  it("si la plantilla ya no está sincronizada lo anota y no envía", async () => {
+    const t = run([msg({ template: { name: "vieja", language: "es", params: [] } })], {
+      channel: true,
+      lastLeadMessageAt: null,
+    });
+    await runEnrollment(t.client, "e1");
+    expect(dispatchTemplate).not.toHaveBeenCalled();
+    expect(t.events()[0]).toMatch(/«vieja»/);
+  });
+
+  it("en simulación no aplica la ventana (los flujos de prueba siguen igual)", async () => {
+    const t = run([msg()], { channel: false, lastLeadMessageAt: null });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual(["Hola Ana"]);
+  });
+
+  it("fuera de horario hábil deja el mismo paso para la siguiente apertura", async () => {
+    // Abierto sólo un minuto de un día que no es hoy: siempre está cerrado ahora.
+    const today = new Date().getUTCDay();
+    const days = Array.from({ length: 7 }, (_, d) =>
+      d === (today + 3) % 7 ? ["09:00", "09:01"] : null,
+    );
+    const t = run([msg({ businessHours: true })], { hours: { tz: "UTC", days } });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual([]);
+    const last = t.enrUpdates().at(-1)!.payload;
+    expect(last).toMatchObject({ current_node: "m1", current_step: 0, locked_until: null });
+    const at = new Date(last["next_run_at"] as string);
+    expect(at.getUTCDay()).toBe((today + 3) % 7);
+    expect(at.getUTCHours()).toBe(9);
+  });
+
+  it("sin horario configurado el mensaje sale a cualquier hora", async () => {
+    const t = run([msg({ businessHours: true })], { hours: {} });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual(["Hola Ana"]);
+  });
+
+  it("«Sacar de todos los flujos» cancela las demás inscripciones, no esta", async () => {
+    const t = run([{ id: "x", type: "action", action: "exit_flows", value: "" }, msg()]);
+    await runEnrollment(t.client, "e1");
+    const cancel = t.enrUpdates().find((u) => u.payload["status"] === "cancelled")!;
+    expect(cancel.filters).toEqual(
+      expect.arrayContaining([
+        ["eq", "lead_id", "l1"],
+        ["eq", "status", "active"],
+        ["neq", "id", "e1"],
+      ]),
+    );
+    expect(t.sent()).toEqual(["Hola Ana"]);
+    expect(t.events()[0]).toMatch(/lo sacó de otro flujo/);
+  });
+
+  it("«Dar de baja» marca al lead y ya no envía mensajes", async () => {
+    const t = run([{ id: "x", type: "action", action: "opt_out", value: "" }, msg()]);
+    await runEnrollment(t.client, "e1");
+    const optOut = t.sb.calls.find((c) => c.table === "leads" && c.op === "update")!;
+    expect(optOut.payload).toMatchObject({ opt_out_reason: "lo dio de baja el flujo «Catálogo»" });
+    expect(t.sent()).toEqual([]);
+    expect(t.enrUpdates().at(-1)!.payload).toMatchObject({ status: "cancelled" });
+  });
+
+  it("un lead dado de baja no recibe mensajes", async () => {
+    const t = run([msg()], { optedOut: true });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual([]);
+    expect(t.enrUpdates().at(-1)!.payload).toMatchObject({ status: "cancelled" });
   });
 });

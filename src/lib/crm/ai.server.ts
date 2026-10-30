@@ -46,6 +46,7 @@ export const qualificationSchema = z.object({
       "objecion",
       "no_interesado",
       "quiere_humano",
+      "pide_baja",
       "otro",
     ])
     .describe("Intención del ÚLTIMO mensaje del prospecto, sin contar el resto del historial"),

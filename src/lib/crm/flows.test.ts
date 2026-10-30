@@ -2,6 +2,10 @@ import { describe, expect, it } from "vitest";
 import { exportFlow, parseFlow } from "./flow-io";
 import {
   END_NODE,
+  nextOpening,
+  stepsAtRiskOfClosedWindow,
+  templatePreview,
+  windowOpen,
   FLOW_TEMPLATES,
   matchKeyword,
   normalizeText,
@@ -193,5 +197,105 @@ describe("plantilla «Lead caliente»", () => {
       "Te atiende Ana",
     );
     expect(renderText("Te atiende {{asesor}}", { lead, account })).toBe("Te atiende un asesor");
+  });
+});
+
+describe("reglas de WhatsApp", () => {
+  const HOUR = 3_600_000;
+  it("la ventana de 24 h se cuenta desde el último mensaje del lead", () => {
+    const now = Date.parse("2026-10-30T12:00:00Z");
+    expect(windowOpen(new Date(now - 23 * HOUR).toISOString(), now)).toBe(true);
+    expect(windowOpen(new Date(now - 25 * HOUR).toISOString(), now)).toBe(false);
+    expect(windowOpen(null, now)).toBe(false);
+  });
+
+  it("avisa de los mensajes sin plantilla después de esperas de 24 h o más", () => {
+    const m = (id: string, template = false): FlowStep => ({
+      id,
+      type: "message",
+      text: "hola",
+      materialId: null,
+      template: template ? { name: "t", language: "es", params: [] } : null,
+    });
+    const steps: FlowStep[] = [
+      m("a"),
+      { id: "w1", type: "wait", amount: 12, unit: "hour" },
+      m("b"),
+      {
+        id: "c",
+        type: "condition",
+        rule: { kind: "replied" },
+        yes: [],
+        no: [{ id: "w2", type: "wait", amount: 1, unit: "day" }, m("c1"), m("c2", true)],
+      },
+      m("d"),
+    ];
+    expect([...stepsAtRiskOfClosedWindow(steps)].sort()).toEqual(["c1", "d"]);
+    expect(
+      stepsAtRiskOfClosedWindow([
+        { id: "w", type: "wait_appt", amount: 2, unit: "hour" },
+        m("r"),
+      ]).has("r"),
+    ).toBe(true);
+  });
+
+  it("arma la vista previa de la plantilla con posiciones o nombres", () => {
+    expect(
+      templatePreview({ body: "Hola {{1}}, tu cita es el {{2}}. {{1}}!", params: ["1", "2"] }, [
+        "Ana",
+        "$5",
+      ]),
+    ).toBe("Hola Ana, tu cita es el $5. Ana!");
+    expect(templatePreview({ body: "Hola {{ nombre }}", params: ["nombre"] }, ["Luis"])).toBe(
+      "Hola Luis",
+    );
+  });
+
+  describe("horario hábil", () => {
+    // Lunes a viernes de 9 a 19 h y sábado de 10 a 14 h, hora del centro de México (UTC-6).
+    const hours = {
+      tz: "America/Mexico_City",
+      days: [
+        null,
+        ["09:00", "19:00"],
+        ["09:00", "19:00"],
+        ["09:00", "19:00"],
+        ["09:00", "19:00"],
+        ["09:00", "19:00"],
+        ["10:00", "14:00"],
+      ] as const,
+    };
+    it("dentro del horario envía ya", () => {
+      // Jueves 29 oct 2026, 10:00 en CDMX.
+      expect(nextOpening(hours, new Date("2026-10-29T16:00:00Z"))).toBeNull();
+    });
+    it("antes de abrir espera a la apertura de ese día", () => {
+      expect(nextOpening(hours, new Date("2026-10-29T13:00:00Z"))?.toISOString()).toBe(
+        "2026-10-29T15:00:00.000Z",
+      );
+    });
+    it("después de cerrar el sábado salta el domingo cerrado y abre el lunes", () => {
+      // Sábado 31 oct 2026, 15:00 en CDMX.
+      expect(nextOpening(hours, new Date("2026-10-31T21:00:00Z"))?.toISOString()).toBe(
+        "2026-11-02T15:00:00.000Z",
+      );
+    });
+    it("cruza el fin de mes", () => {
+      // Viernes 30 oct, 20:00 en CDMX → sábado 31 a las 10:00.
+      expect(nextOpening(hours, new Date("2026-10-31T02:00:00Z"))?.toISOString()).toBe(
+        "2026-10-31T16:00:00.000Z",
+      );
+    });
+    it("respeta el horario de verano de la zona", () => {
+      // Madrid pasa a horario de invierno el 25 oct 2026: el lunes 26 abre a las 08:00 UTC.
+      const madrid = { tz: "Europe/Madrid", days: [null, ["09:00", "18:00"]] as const };
+      expect(nextOpening(madrid, new Date("2026-10-24T12:00:00Z"))?.toISOString()).toBe(
+        "2026-10-26T08:00:00.000Z",
+      );
+    });
+    it("sin horario válido no espera nunca", () => {
+      expect(nextOpening({}, new Date())).toBeNull();
+      expect(nextOpening({ days: [["19:00", "09:00"]] }, new Date())).toBeNull();
+    });
   });
 });

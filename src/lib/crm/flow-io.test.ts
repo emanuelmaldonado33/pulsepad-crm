@@ -208,3 +208,56 @@ describe("pasos de entrega al asesor en JSON", () => {
     );
   });
 });
+
+describe("reglas de WhatsApp en JSON", () => {
+  const base = { name: "x", trigger: { type: "new_lead" } };
+  it("ida y vuelta conserva plantilla, horario hábil y las acciones de baja", () => {
+    const f = parseFlow(
+      {
+        ...base,
+        steps: [
+          {
+            type: "message",
+            text: "Hola",
+            businessHours: true,
+            template: { name: "seguimiento_1", language: "es_MX", params: ["{{nombre}}"] },
+          },
+          { type: "message", text: "", material: "Video de avances" },
+          { type: "action", action: "exit_flows" },
+          { type: "action", action: "opt_out", value: "x" },
+        ],
+      },
+      "a",
+      mats,
+    );
+    const again = parseFlow(
+      exportFlow(f, (id) => mats.find((m) => m.id === id)?.name ?? null),
+      "a",
+      mats,
+    );
+    expect(again.steps).toMatchObject([
+      {
+        type: "message",
+        businessHours: true,
+        template: { name: "seguimiento_1", language: "es_MX", params: ["{{nombre}}"] },
+      },
+      { type: "message", text: "", materialId: "m1" },
+      { type: "action", action: "exit_flows", value: "" },
+      { type: "action", action: "opt_out", value: "" },
+    ]);
+    expect(again.steps[1]).not.toHaveProperty("template");
+  });
+
+  it("rechaza plantillas mal escritas y mensajes sin texto ni archivo", () => {
+    expect(() =>
+      parseFlow(
+        { ...base, steps: [{ type: "message", text: "a", template: { name: "Mi Plantilla" } }] },
+        "a",
+        mats,
+      ),
+    ).toThrow(/plantilla/);
+    expect(() =>
+      parseFlow({ ...base, steps: [{ type: "message", text: " " }] }, "a", mats),
+    ).toThrow(/vacío/);
+  });
+});

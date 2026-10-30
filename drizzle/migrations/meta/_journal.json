@@ -99,6 +99,13 @@
       "when": 1793232000004,
       "tag": "0013_flow_advisor_handoff",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1793232000005,
+      "tag": "0014_flow_whatsapp_rules",
+      "breakpoints": true
     }
   ]
 }

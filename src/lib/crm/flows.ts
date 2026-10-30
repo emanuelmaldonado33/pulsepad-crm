@@ -12,9 +12,48 @@ export type ConditionRule =
 
 /** A quién avisa el paso «Avisar al equipo»: el asesor asignado, los administradores o un user_id. */
 export type NotifyTarget = "assigned" | "admins" | (string & {});
-export type LeadAction = "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off";
+export type LeadAction =
+  | "add_tag"
+  | "remove_tag"
+  | "set_stage"
+  | "bot_on"
+  | "bot_off"
+  /** Cancela las demás inscripciones activas del lead. */
+  | "exit_flows"
+  /** Lo da de baja: sale de todos los flujos y no recibe más mensajes automáticos. */
+  | "opt_out";
+
+/**
+ * Plantilla aprobada por Meta para cuando la ventana de 24 h está cerrada. params lleva un
+ * texto (con variables de Pulse) por cada variable del cuerpo, en orden.
+ */
+export interface TemplateRef {
+  name: string;
+  language: string;
+  params: string[];
+}
+
+/** Plantilla sincronizada de WhatsApp Business (whatsapp_templates). */
+export interface WaTemplate {
+  name: string;
+  language: string;
+  category: string;
+  body: string;
+  headerFormat: "IMAGE" | "VIDEO" | "DOCUMENT" | null;
+  params: string[];
+}
+
 export type FlowStep =
-  | { id: string; type: "message"; text: string; materialId: string | null }
+  | {
+      id: string;
+      type: "message";
+      text: string;
+      materialId: string | null;
+      /** Se usa en lugar del texto si pasaron más de 24 h desde el último mensaje del lead. */
+      template?: TemplateRef | null;
+      /** Si cae fuera del horario hábil de la subcuenta, espera a la siguiente apertura. */
+      businessHours?: boolean;
+    }
   | { id: string; type: "wait"; amount: number; unit: WaitUnit }
   | { id: string; type: "wait_appt"; amount: number; unit: WaitUnit }
   | { id: string; type: "action"; action: LeadAction; value: string }
@@ -35,6 +74,7 @@ export const MESSAGE_INTENTS = {
   objecion: "Tiene una objeción",
   no_interesado: "No le interesa",
   quiere_humano: "Pide hablar con un humano",
+  pide_baja: "Pide no recibir mensajes",
 } as const;
 export type MessageIntent = keyof typeof MESSAGE_INTENTS;
 
@@ -112,7 +152,7 @@ export interface Material {
   id: string;
   accountId: string;
   name: string;
-  kind: "video" | "pdf" | "image";
+  kind: "video" | "pdf" | "image" | "audio";
   url: string;
   storagePath?: string | null;
 }
@@ -556,6 +596,65 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
     stopOnReply: false,
   },
   {
+    key: "catalogo-pdf",
+    name: "Enviar catálogo en PDF y dar seguimiento",
+    description:
+      "Envía el catálogo en horario hábil; si a las 24 h no respondió, insiste (con plantilla si ya cerró la ventana de WhatsApp) y a los 3 días lo marca como frío.",
+    triggerType: "keyword",
+    triggerValue: "",
+    triggerConfig: { keywords: ["catalogo", "catálogo", "brochure", "pdf", "informacion"] },
+    allowReentry: false,
+    steps: (m) => [
+      {
+        id: sid(),
+        type: "message",
+        text: "¡Claro {{nombre}}! Aquí tienes el catálogo de {{proyecto}} con precios y planes 📄",
+        materialId: firstOf(m, "pdf"),
+        businessHours: true,
+      },
+      { id: sid(), type: "action", action: "add_tag", value: "catalogo-enviado" },
+      { id: sid(), type: "wait", amount: 24, unit: "hour" },
+      {
+        id: sid(),
+        type: "condition",
+        rule: { kind: "replied" },
+        yes: [{ id: sid(), type: "end" }],
+        no: [
+          {
+            id: sid(),
+            type: "message",
+            text: "{{nombre}}, ¿pudiste revisar el catálogo? Dime qué opción te llamó la atención y te ayudo con los números 🙂",
+            materialId: null,
+            template: null,
+            businessHours: true,
+          },
+          { id: sid(), type: "wait", amount: 3, unit: "day" },
+          {
+            id: sid(),
+            type: "condition",
+            rule: { kind: "replied" },
+            yes: [],
+            no: [{ id: sid(), type: "action", action: "add_tag", value: "frio" }],
+          },
+        ],
+      },
+    ],
+    stopOnReply: false,
+  },
+  {
+    key: "baja",
+    name: "Baja: sacar de todos los flujos",
+    description:
+      "Cuando el lead se marca como no califica: lo saca de todos los demás flujos y le apaga el bot. No lo da de baja de WhatsApp (eso es la acción «Dar de baja»).",
+    triggerType: "tag",
+    triggerValue: "no-califica",
+    steps: () => [
+      { id: sid(), type: "action", action: "exit_flows", value: "" },
+      { id: sid(), type: "action", action: "bot_off", value: "" },
+      { id: sid(), type: "action", action: "add_tag", value: "baja" },
+    ],
+  },
+  {
     key: "recordatorio",
     name: "Recordatorio de Cita",
     description: "Mensajes 24h y 2h antes de la cita con resumen y confirmación.",
@@ -581,4 +680,122 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
 ];
 
 export const materialIcon = (k: Material["kind"]) =>
-  k === "video" ? "🎥" : k === "image" ? "🖼️" : "📄";
+  k === "video" ? "🎥" : k === "image" ? "🖼️" : k === "audio" ? "🎙️" : "📄";
+
+// ===== Reglas de WhatsApp Business =====
+
+/** Meta sólo deja enviar texto libre hasta 24 h después del último mensaje del lead. */
+export const WINDOW_MS = 24 * 3_600_000;
+
+/** ¿Se puede enviar texto libre? Sin mensajes del lead la ventana nunca se abrió. */
+export const windowOpen = (lastLeadMessageAt: string | null | undefined, now = Date.now()) =>
+  lastLeadMessageAt != null && now - new Date(lastLeadMessageAt).getTime() < WINDOW_MS;
+
+/**
+ * Mensajes sin plantilla que pueden llegar con la ventana cerrada: los que van después de
+ * esperas que suman 24 h o más, o de una espera antes de la cita. Es una estimación para
+ * avisar en el editor; el motor revisa la ventana real al enviar.
+ */
+export function stepsAtRiskOfClosedWindow(steps: FlowStep[]): Set<string> {
+  const risky = new Set<string>();
+  const walk = (list: FlowStep[], waited: number): number => {
+    for (const s of list) {
+      if (s.type === "wait") waited += waitMs(s.amount, s.unit);
+      else if (s.type === "wait_appt") waited = Math.max(waited, WINDOW_MS);
+      else if (s.type === "message" && !s.template && waited >= WINDOW_MS) risky.add(s.id);
+      else if (s.type === "condition") waited = Math.max(walk(s.yes, waited), walk(s.no, waited));
+    }
+    return waited;
+  };
+  walk(steps, 0);
+  return risky;
+}
+
+/** Texto que verá el lead con la plantilla: el cuerpo con cada variable reemplazada. */
+export function templatePreview(t: Pick<WaTemplate, "body" | "params">, values: string[]) {
+  return t.params.reduce(
+    (body, key, i) =>
+      body.replace(new RegExp(`\\{\\{\\s*${key}\\s*\\}\\}`, "g"), () => values[i] ?? ""),
+    t.body,
+  );
+}
+
+/** days[0] = domingo; cada día es [apertura, cierre] en "HH:MM" o null si está cerrado. */
+export interface BusinessHours {
+  tz?: string;
+  days?: readonly (readonly [string, string] | null)[];
+}
+export const DEFAULT_TZ = "America/Mexico_City";
+export const WEEKDAYS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+
+const minutesOf = (hhmm: string) => {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(hhmm);
+  if (!m) return null;
+  const v = Number(m[1]) * 60 + Number(m[2]);
+  return v <= 24 * 60 ? v : null;
+};
+const daySpan = (h: BusinessHours, day: number) => {
+  const d = h.days?.[day];
+  if (!d) return null;
+  const open = minutesOf(d[0]),
+    close = minutesOf(d[1]);
+  return open != null && close != null && close > open ? { open, close } : null;
+};
+
+/** ¿Hay al menos un día con horario válido? Sin horario los mensajes salen a cualquier hora. */
+export const hoursConfigured = (h: BusinessHours | null | undefined): h is BusinessHours =>
+  !!h && [0, 1, 2, 3, 4, 5, 6].some((d) => daySpan(h, d) != null);
+
+/** Fecha, día de la semana y minuto del día de un instante en una zona horaria. */
+function zoned(t: number, tz: string) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "numeric",
+      day: "numeric",
+      weekday: "short",
+      hour: "numeric",
+      minute: "numeric",
+    })
+      .formatToParts(new Date(t))
+      .map((p) => [p.type, p.value]),
+  );
+  const y = Number(parts["year"]),
+    mo = Number(parts["month"]),
+    d = Number(parts["day"]);
+  const min = Number(parts["hour"]) * 60 + Number(parts["minute"]);
+  return { y, mo, d, min, wd: new Date(Date.UTC(y, mo - 1, d)).getUTCDay() };
+}
+
+/** Instante en que la zona horaria marca ese día (d puede pasarse del mes) y minuto. */
+function zonedInstant(y: number, mo: number, d: number, min: number, tz: string) {
+  const wall = Date.UTC(y, mo - 1, d, 0, min);
+  let t = wall;
+  for (let i = 0; i < 2; i++) {
+    const z = zoned(t, tz);
+    t += wall - Date.UTC(z.y, z.mo - 1, z.d, 0, z.min);
+  }
+  return t;
+}
+
+/** Siguiente apertura del negocio, o null si está abierto ahora (o no hay horario). */
+export function nextOpening(h: BusinessHours | null | undefined, now: Date): Date | null {
+  if (!hoursConfigured(h)) return null;
+  let tz = h.tz || DEFAULT_TZ;
+  try {
+    zoned(0, tz);
+  } catch {
+    tz = DEFAULT_TZ;
+  }
+  const z = zoned(now.getTime(), tz);
+  for (let k = 0; k <= 7; k++) {
+    const span = daySpan(h, (z.wd + k) % 7);
+    if (!span) continue;
+    if (k === 0 && z.min >= span.open && z.min < span.close) return null;
+    if (k === 0 && z.min >= span.close) continue;
+    return new Date(zonedInstant(z.y, z.mo, z.d + k, span.open, tz));
+  }
+  return null;
+}

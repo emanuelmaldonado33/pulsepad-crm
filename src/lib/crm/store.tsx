@@ -12,7 +12,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import type { Account, AppNotification, Appointment, Lead, Member, Message } from "./types";
 import { applyTag } from "./automation";
-import type { Enrollment, Flow, Material } from "./flows";
+import type { Enrollment, Flow, Material, WaTemplate } from "./flows";
 import { useServerFn } from "@tanstack/react-start";
 import { runFlowNow } from "./flows.functions";
 import {
@@ -36,6 +36,7 @@ interface State {
   materials: Material[];
   members: Member[];
   notifications: AppNotification[];
+  templates: (WaTemplate & { accountId: string })[];
   me: string | null;
 }
 
@@ -81,6 +82,10 @@ interface Ctx {
     patch: Partial<Pick<Member, "name" | "whatsappPhone" | "available">>,
   ) => Promise<void>;
   assignLead: (leadId: string, userId: string | null) => Promise<void>;
+  /** Plantillas de WhatsApp aprobadas de la subcuenta activa (se sincronizan desde Meta). */
+  templates: WaTemplate[];
+  /** Dar de baja (sale de todos los flujos, bot apagado) o quitar la baja. */
+  setOptOut: (leadId: string, on: boolean) => Promise<void>;
 }
 
 const CrmContext = createContext<Ctx | null>(null);
@@ -119,6 +124,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
     materials: [],
     members: [],
     notifications: [],
+    templates: [],
     me: null,
   });
   const [activeId, setActiveId] = useState<string>("");
@@ -139,7 +145,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
   stateRef.current = state;
 
   const reload = useCallback(async () => {
-    const [a, l, m, ap, fl, en, ma, mb, no, se] = await Promise.all([
+    const [a, l, m, ap, fl, en, ma, mb, no, wt, se] = await Promise.all([
       supabase.from("accounts").select("*").order("created_at"),
       supabase.from("leads").select("*").order("created_at", { ascending: false }),
       supabase.from("messages").select("*").order("created_at").limit(5000),
@@ -157,6 +163,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50),
+      supabase.from("whatsapp_templates").select("*").order("name"),
       supabase.auth.getSession(),
     ]);
     const err =
@@ -193,6 +200,16 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         waStatus: r.wa_status,
         readAt: r.read_at,
         createdAt: r.created_at,
+      })),
+      // Sin la migración 0014 no hay plantillas: los pasos simplemente no las ofrecen.
+      templates: (wt.data ?? []).map((r) => ({
+        accountId: r.account_id,
+        name: r.name,
+        language: r.language,
+        category: r.category,
+        body: r.body,
+        headerFormat: r.header_format as WaTemplate["headerFormat"],
+        params: r.params ?? [],
       })),
       me: se.data.session?.user.id ?? null,
     });
@@ -234,6 +251,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
             qualification_rules: next.qualificationRules,
             ai_model: next.aiModel,
             auto_pause_bot: next.autoPauseBot ?? true,
+            ...(patch.businessHours
+              ? { business_hours: patch.businessHours as unknown as Json }
+              : {}),
           })
           .eq("id", id);
         fail("guardar la subcuenta", error);
@@ -402,7 +422,9 @@ export function CrmProvider({ children }: { children: ReactNode }) {
               ? "image"
               : file.type.startsWith("video/")
                 ? "video"
-                : "pdf";
+                : file.type.startsWith("audio/")
+                  ? "audio"
+                  : "pdf";
         const path = `${account.id}/${crypto.randomUUID()}-${file.name.replace(/[^\w.-]+/g, "_").slice(-80)}`;
         const up = await supabase.storage
           .from("materials")
@@ -554,6 +576,33 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           .eq("account_id", account.id)
           .eq("user_id", userId);
         fail("guardar los datos del equipo", error);
+      },
+      templates: state.templates.filter((t) => t.accountId === account.id),
+      setOptOut: async (leadId, on) => {
+        const at = on ? new Date().toISOString() : null;
+        setState((s) => ({
+          ...s,
+          leads: s.leads.map((l) =>
+            l.id === leadId
+              ? {
+                  ...l,
+                  optedOutAt: at,
+                  optOutReason: on ? "Marcado a mano" : null,
+                  botActive: on ? false : l.botActive,
+                }
+              : l,
+          ),
+        }));
+        fail(
+          on ? "dar de baja al lead" : "quitar la baja",
+          (
+            await supabase
+              .from("leads")
+              .update({ opted_out_at: at, opt_out_reason: on ? "Marcado a mano" : null })
+              .eq("id", leadId)
+          ).error,
+        );
+        await reload();
       },
       assignLead: async (leadId, userId) => {
         setState((s) => ({
