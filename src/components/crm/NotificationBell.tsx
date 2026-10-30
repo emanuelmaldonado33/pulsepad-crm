@@ -28,7 +28,7 @@ export function NotificationBell() {
         >
           <Bell className="h-4 w-4" />
           {unread.length > 0 && (
-            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground">
+            <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-destructive px-1 text-xs font-bold text-destructive-foreground">
               {unread.length > 9 ? "9+" : unread.length}
             </span>
           )}
@@ -75,7 +75,7 @@ export function NotificationBell() {
                 <p className="mt-0.5 line-clamp-4 whitespace-pre-line text-xs text-muted-foreground">
                   {n.body}
                 </p>
-                <div className="mt-0.5 text-[10px] text-muted-foreground">
+                <div className="mt-0.5 text-xs text-muted-foreground">
                   {accounts.length > 1 && (accounts.find((a) => a.id === n.accountId)?.name ?? "")}
                   {n.waStatus && WA_LABEL[n.waStatus] ? ` · ${WA_LABEL[n.waStatus]}` : ""}
                 </div>

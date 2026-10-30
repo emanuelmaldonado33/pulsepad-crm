@@ -14,6 +14,17 @@ export function stageLabel(l: Lead) {
   return `${STAGES[l.stage]!.code} · ${STAGES[l.stage]!.name}`;
 }
 
+function nextStepSuggestion(lead: Lead) {
+  if (lead.stage === 0) return "Inicia el contacto y confirma si mantiene el interés.";
+  if (lead.stage === 1) return "Completa la calificación antes de enviar una propuesta.";
+  if (lead.stage === 2) return "Comparte información relevante para su necesidad.";
+  if (lead.stage === 3) return "Confirma si el material resolvió sus dudas.";
+  if (lead.stage === 4) return "Propón una cita con fecha y hora.";
+  if (lead.stage === 5) return "Prepara la cita y revisa los datos clave.";
+  if (lead.stage === 6) return "Acuerda la próxima acción y fecha de seguimiento.";
+  return lead.outcome === "ganado" ? "Venta cerrada." : "Lead cerrado como no calificado.";
+}
+
 function NumField({
   label,
   value,
@@ -27,7 +38,7 @@ function NumField({
 }) {
   return (
     <label className="block">
-      <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</span>
+      <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
       <div className="flex items-center gap-1">
         <Input
           type="number"
@@ -125,6 +136,10 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
           </button>
         )
       )}
+      <section className="rounded-xl border border-primary/15 bg-primary/[0.035] p-3">
+        <div className="text-xs font-semibold text-primary">Siguiente paso sugerido</div>
+        <p className="mt-1 text-sm leading-relaxed">{nextStepSuggestion(lead)}</p>
+      </section>
 
       <section className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3">
         {readOnly ? (
@@ -166,7 +181,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
 
       <section className="rounded-xl border bg-card p-3">
         <label className="block">
-          <span className="text-[11px] uppercase tracking-wide text-muted-foreground">
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">
             Asesor asignado
           </span>
           {readOnly ? (
@@ -202,9 +217,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
       <LeadHistory leadId={lead.id} />
 
       <section>
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-          Etiquetas
-        </div>
+        <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Etiquetas</div>
         <div className="flex flex-wrap gap-1.5">
           {lead.tags.length === 0 && (
             <span className="text-xs text-muted-foreground">Sin etiquetas</span>
@@ -239,7 +252,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
                   key={t}
                   title={TAG_RULES[t]?.label ?? "Etiqueta descriptiva"}
                   onClick={() => addTag(t)}
-                  className="rounded-full border border-dashed px-2 py-0.5 text-[11px] text-muted-foreground hover:border-primary hover:text-primary"
+                  className="rounded-full border border-dashed px-2 py-0.5 text-xs text-muted-foreground hover:border-primary hover:text-primary"
                 >
                   +{t}
                 </button>
@@ -250,7 +263,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
       </section>
 
       <section>
-        <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
+        <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">
           Notas del asesor
         </div>
         {readOnly ? (
@@ -271,7 +284,7 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
 function Kv({ k, v }: { k: string; v: string }) {
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</div>
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
       <div className="font-display text-sm font-semibold">{v}</div>
     </div>
   );
@@ -296,9 +309,7 @@ function LeadHistory({ leadId }: { leadId: string }) {
   if (!events.length) return null;
   return (
     <section>
-      <div className="mb-2 text-[11px] uppercase tracking-wide text-muted-foreground">
-        Historial
-      </div>
+      <div className="mb-2 text-xs uppercase tracking-wide text-muted-foreground">Historial</div>
       <ul className="space-y-1 text-xs">
         {events.map((e) => (
           <li key={e.id} className="flex gap-2">

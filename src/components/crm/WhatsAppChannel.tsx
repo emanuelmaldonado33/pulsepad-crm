@@ -317,11 +317,11 @@ function Field({
 }) {
   return (
     <div className="block space-y-1">
-      <label htmlFor={id} className="text-[11px] uppercase tracking-wide text-muted-foreground">
+      <label htmlFor={id} className="text-xs uppercase tracking-wide text-muted-foreground">
         {label}
       </label>
       {children}
-      {hint && <span className="block text-[11px] text-muted-foreground">{hint}</span>}
+      {hint && <span className="block text-xs text-muted-foreground">{hint}</span>}
     </div>
   );
 }

@@ -15,13 +15,13 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/simulador")({
   head: () => ({
     meta: [
-      { title: "Simulador de WhatsApp — Nexo CRM" },
+      { title: "Simulador de WhatsApp — Pulse" },
       {
         name: "description",
         content:
           "Prueba la conversación del bot de IA en tiempo real y observa extracción de datos, etiquetas y etapas.",
       },
-      { property: "og:title", content: "Simulador de WhatsApp — Nexo CRM" },
+      { property: "og:title", content: "Simulador de WhatsApp — Pulse" },
       {
         property: "og:description",
         content:
@@ -109,7 +109,7 @@ function Simulator() {
       <div className="flex flex-1 items-center justify-center p-8">
         <div className="max-w-md text-center">
           <FlaskConical className="mx-auto h-10 w-10 text-primary" />
-          <h1 className="mt-3 text-2xl font-semibold">Playground de WhatsApp</h1>
+          <h1 className="mt-3 text-2xl font-semibold">Probar el bot</h1>
           <p className="mt-2 text-sm text-muted-foreground">
             Escribe como un prospecto de <b>{account.name}</b> con tus propias palabras. La IA
             entiende lenguaje natural, extrae presupuesto, enganche, plazo e intención, y mueve

@@ -25,13 +25,13 @@ import { DEFAULT_TZ, WEEKDAYS, hoursConfigured, type BusinessHours } from "@/lib
 export const Route = createFileRoute("/configuracion")({
   head: () => ({
     meta: [
-      { title: "Configuración de IA — Nexo CRM" },
+      { title: "Configuración de IA — Pulse" },
       {
         name: "description",
         content:
           "Edita el prompt del setter, las reglas de calificación y revisa el consumo de tokens por subcuenta.",
       },
-      { property: "og:title", content: "Configuración de IA — Nexo CRM" },
+      { property: "og:title", content: "Configuración de IA — Pulse" },
       {
         property: "og:description",
         content:
@@ -152,7 +152,7 @@ function AiConfig() {
           ],
         ].map(([k, v]) => (
           <div key={k} className="rounded-xl border bg-card p-4">
-            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{k}</div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">{k}</div>
             <div className="font-display text-xl font-semibold">{v}</div>
           </div>
         ))}

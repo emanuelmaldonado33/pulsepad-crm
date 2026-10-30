@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { MessageCircle, Search, Upload } from "lucide-react";
+import { LayoutGrid, List, MessageCircle, Search, Upload } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { LeadFile } from "@/components/crm/LeadFile";
@@ -15,12 +15,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Pipeline de ventas — Nexo CRM" },
+      { title: "Clientes — Pulse" },
       {
         name: "description",
         content: "Pipeline Kanban P0–P7 con filtros rápidos y valor total por etapa.",
       },
-      { property: "og:title", content: "Pipeline de ventas — Nexo CRM" },
+      { property: "og:title", content: "Clientes — Pulse" },
       {
         property: "og:description",
         content: "Pipeline Kanban P0–P7 con filtros rápidos y valor total por etapa.",
@@ -37,6 +37,7 @@ function Pipeline() {
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<Filter>("todos");
+  const [view, setView] = useState<"kanban" | "list">("kanban");
   /** Origen del lead: lona/QR, anuncio, importación… "" = todos. */
   const [origin, setOrigin] = useState("");
   const origins = useMemo(() => {
@@ -62,7 +63,7 @@ function Pipeline() {
         if (filter === "bot") return l.botActive;
         if (filter === "humano") return !l.botActive;
         if (filter === "vip") return l.tags.includes("vip");
-        if (filter === "hoy") return l.stage <= 1;
+        if (filter === "hoy") return l.stage === 0;
         return true;
       }),
     [leads, q, filter, origin],
@@ -98,34 +99,32 @@ function Pipeline() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex flex-wrap items-end gap-4 px-4 pb-5 pt-7 lg:px-8">
         <div>
-          <h1 className="text-[28px] font-semibold leading-tight">Pipeline</h1>
-          <p className="mt-0.5 text-[13px] text-muted-foreground">
+          <h1 className="text-[28px] font-semibold leading-tight">Tus clientes</h1>
+          <p className="mt-0.5 text-sm text-muted-foreground">
             Arrastra entre etapas; etiquetas y bot se sincronizan solos.
           </p>
         </div>
-        <div className="ml-auto flex items-end gap-8">
-          <Stat label="Valor en pipeline" value={money(total)} />
+        <div className="ml-auto flex w-full items-end justify-between gap-3 sm:w-auto sm:gap-8">
+          <Stat label="Valor total" value={money(total)} />
           <Stat label="Ganado" value={money(won)} accent />
-          <Stat label="Leads" value={String(filtered.length)} />
+          <Stat label="Clientes" value={String(filtered.length)} />
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3 px-4 pb-5 lg:px-8">
-        <div className="relative w-64">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+        <div className="relative w-full sm:w-80">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Buscar"
-            className="h-8 rounded-full border-0 bg-muted pl-8 text-[13px] shadow-none"
+            placeholder="Buscar persona, teléfono o etiqueta"
+            aria-label="Buscar leads"
+            className="h-10 rounded-xl border-0 bg-muted pl-9 text-sm shadow-none"
           />
         </div>
         <Segmented value={filter} onChange={setFilter} options={FILTERS} />
         {origins.length > 1 && (
           <Select value={origin || "*"} onValueChange={(v) => setOrigin(v === "*" ? "" : v)}>
-            <SelectTrigger
-              className="h-8 w-auto gap-2 rounded-full text-[13px]"
-              aria-label="Origen"
-            >
+            <SelectTrigger className="h-10 w-auto gap-2 rounded-full text-sm" aria-label="Origen">
               <span className="text-muted-foreground">Origen:</span> {origin || "Todos"}
             </SelectTrigger>
             <SelectContent>
@@ -138,15 +137,38 @@ function Pipeline() {
             </SelectContent>
           </Select>
         )}
-        <Button variant="outline" size="sm" className="ml-auto" onClick={() => setImportOpen(true)}>
-          <Upload className="mr-2 h-4 w-4" /> Importar CSV
-        </Button>
+        <div className="ml-auto flex items-center gap-1">
+          <Button
+            type="button"
+            size="icon"
+            variant={view === "kanban" ? "secondary" : "ghost"}
+            aria-label="Vista Kanban"
+            aria-pressed={view === "kanban"}
+            onClick={() => setView("kanban")}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            type="button"
+            size="icon"
+            variant={view === "list" ? "secondary" : "ghost"}
+            aria-label="Vista de lista"
+            aria-pressed={view === "list"}
+            onClick={() => setView("list")}
+          >
+            <List className="h-4 w-4" />
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <Upload className="mr-2 h-4 w-4" />{" "}
+            <span className="hidden sm:inline">Importar CSV</span>
+          </Button>
+        </div>
       </div>
       <ImportLeadsDialog open={importOpen} onOpenChange={setImportOpen} />
       <Sheet open={!!openLead} onOpenChange={(v) => !v && setOpenId(null)}>
         <SheetContent className="w-full overflow-y-auto p-0 sm:max-w-md">
           <SheetHeader className="px-4 pt-4">
-            <SheetTitle>Expediente del lead</SheetTitle>
+            <SheetTitle>Ficha del cliente</SheetTitle>
           </SheetHeader>
           {openLead && (
             <>
@@ -165,100 +187,143 @@ function Pipeline() {
         </SheetContent>
       </Sheet>
 
-      <div className="flex min-h-0 flex-1 gap-4 overflow-x-auto px-4 pb-8 lg:px-8">
-        {STAGES.map((s, i) => {
-          const zones = i === 7 ? (["7:ganado", "7:no_califica"] as const) : ([`${i}:`] as const);
-          const col = filtered.filter((l) => l.stage === i);
-          const value = col
-            .filter((l) => l.outcome !== "no_califica")
-            .reduce((a, l) => a + (l.budget ?? 0), 0);
-          return (
-            <div
-              key={s.code}
-              className="flex w-[17rem] shrink-0 flex-col rounded-[18px] bg-foreground/[0.025] ring-[0.5px] ring-hairline"
-            >
-              <div className="px-3.5 pb-2 pt-3">
-                <div className="flex items-baseline gap-2">
-                  <span className="tabular text-[11px] font-medium text-muted-foreground">
-                    {s.code}
-                  </span>
-                  <span className="truncate text-[13px] font-semibold">{s.name}</span>
-                  <span className="tabular ml-auto text-[12px] text-muted-foreground">
-                    {col.length}
-                  </span>
+      {view === "kanban" ? (
+        <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-8 lg:gap-4 lg:px-8">
+          {STAGES.map((s, i) => {
+            const zones = i === 7 ? (["7:ganado", "7:no_califica"] as const) : ([`${i}:`] as const);
+            const col = filtered.filter((l) => l.stage === i);
+            const value = col
+              .filter((l) => l.outcome !== "no_califica")
+              .reduce((a, l) => a + (l.budget ?? 0), 0);
+            return (
+              <div
+                key={s.code}
+                className="flex w-[15rem] shrink-0 flex-col rounded-[18px] bg-foreground/[0.025] ring-1 ring-hairline lg:w-[17rem]"
+              >
+                <div className="px-3.5 pb-2 pt-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="line-clamp-2 text-sm font-semibold leading-tight">
+                      {s.name}
+                    </span>
+                    <span className="tabular ml-auto text-sm text-muted-foreground">
+                      {col.length}
+                    </span>
+                  </div>
+                  <div className="tabular mt-0.5 text-sm text-muted-foreground">{money(value)}</div>
                 </div>
-                <div className="tabular mt-0.5 text-[12px] text-muted-foreground">
-                  {money(value)}
-                </div>
-              </div>
-              <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
-                {zones.map((z) => {
-                  const items = i === 7 ? col.filter((l) => l.outcome === z.split(":")[1]) : col;
-                  return (
-                    <div
-                      key={z}
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                        setOver(z);
-                      }}
-                      onDragLeave={() => setOver(null)}
-                      onDrop={() => drop(z)}
-                      className={`flex min-h-24 flex-1 flex-col gap-1.5 rounded-[14px] p-0.5 transition-colors duration-300 ${over === z ? "bg-primary/[0.06] ring-1 ring-primary/30" : ""}`}
-                    >
-                      {i === 7 && (
-                        <div className="flex items-center gap-1.5 px-1.5 pt-1 text-[11px] font-medium text-muted-foreground">
-                          <span
-                            className={`h-1.5 w-1.5 rounded-full ${z.endsWith("ganado") ? "bg-success" : "bg-destructive"}`}
-                          />
-                          {z.endsWith("ganado") ? "Ganado" : "No califica"}
-                        </div>
-                      )}
-                      {items.map((l) => (
-                        <button
-                          key={l.id}
-                          draggable
-                          onDragStart={() => setDragId(l.id)}
-                          onClick={() => setOpenId(l.id)}
-                          className={`group press rounded-[12px] bg-card px-3 py-2.5 text-left lift ${dragId === l.id ? "opacity-40" : ""}`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                              {l.name}
-                            </span>
+                <div className="flex flex-1 flex-col gap-2 px-2 pb-2">
+                  {zones.map((z) => {
+                    const items = i === 7 ? col.filter((l) => l.outcome === z.split(":")[1]) : col;
+                    return (
+                      <div
+                        key={z}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          setOver(z);
+                        }}
+                        onDragLeave={() => setOver(null)}
+                        onDrop={() => drop(z)}
+                        className={`flex min-h-24 flex-1 flex-col gap-1.5 rounded-[14px] p-0.5 transition-colors duration-300 ${over === z ? "bg-primary/[0.06] ring-1 ring-primary/30" : ""}`}
+                      >
+                        {i === 7 && (
+                          <div className="flex items-center gap-1.5 px-1.5 pt-1 text-xs font-medium text-muted-foreground">
                             <span
-                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${l.botActive ? "bg-primary" : "bg-muted-foreground/40"}`}
-                              title={l.botActive ? "Bot activo" : "Con asesor"}
-                              aria-label={l.botActive ? "Bot activo" : "Con asesor"}
+                              className={`h-1.5 w-1.5 rounded-full ${z.endsWith("ganado") ? "bg-success" : "bg-destructive"}`}
                             />
+                            {z.endsWith("ganado") ? "Ganado" : "No califica"}
                           </div>
-                          <div className="mt-1 flex items-baseline justify-between gap-2">
-                            <span
-                              className={`tabular text-[15px] font-semibold ${l.budget == null ? "text-muted-foreground/50" : ""}`}
-                            >
-                              {money(l.budget)}
-                            </span>
-                            <span className="truncate text-[11px] text-muted-foreground">
-                              {l.source}
-                            </span>
-                          </div>
-                          {l.tags.length > 0 && (
-                            <div className="mt-1.5 truncate text-[11px] text-muted-foreground">
-                              {l.tags
-                                .slice(0, 3)
-                                .map((t) => `#${t}`)
-                                .join("  ")}
+                        )}
+                        {items.map((l) => (
+                          <button
+                            key={l.id}
+                            draggable
+                            onDragStart={() => setDragId(l.id)}
+                            onClick={() => setOpenId(l.id)}
+                            className={`group press rounded-[12px] bg-card px-3 py-2.5 text-left lift ${dragId === l.id ? "opacity-40" : ""}`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                                {l.name}
+                              </span>
+                              <span
+                                className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${l.botActive ? "bg-primary/10 text-primary" : "bg-warning/15 text-foreground"}`}
+                              >
+                                {l.botActive ? "Bot" : "Asesor"}
+                              </span>
                             </div>
-                          )}
-                        </button>
-                      ))}
-                    </div>
-                  );
-                })}
+                            <div className="mt-1 flex items-baseline justify-between gap-2">
+                              <span
+                                className={`tabular text-base font-semibold ${l.budget == null ? "text-muted-foreground/50" : ""}`}
+                              >
+                                {money(l.budget)}
+                              </span>
+                              <span className="truncate text-xs text-muted-foreground">
+                                {l.source}
+                              </span>
+                            </div>
+                            {l.tags.length > 0 && (
+                              <div className="mt-1.5 truncate text-xs text-muted-foreground">
+                                {l.tags
+                                  .slice(0, 3)
+                                  .map((t) => `#${t}`)
+                                  .join("  ")}
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-8 lg:px-8">
+          <div className="mb-3 text-sm text-muted-foreground">{filtered.length} leads</div>
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+              No hay leads que coincidan. Ajusta los filtros o la búsqueda.
             </div>
-          );
-        })}
-      </div>
+          ) : (
+            <div className="grid gap-2">
+              {filtered.map((l) => (
+                <button
+                  key={l.id}
+                  type="button"
+                  onClick={() => setOpenId(l.id)}
+                  aria-label={`Abrir expediente de ${l.name}`}
+                  className="grid w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 rounded-xl border bg-card p-3 text-left transition-colors hover:bg-accent/50 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_auto_auto]"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-semibold">{l.name}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {l.phone} · {l.source}
+                    </span>
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground sm:text-sm">
+                    {l.stage === 7
+                      ? l.outcome === "ganado"
+                        ? "Ganado"
+                        : "No califica"
+                      : `${STAGES[l.stage]!.code} · ${STAGES[l.stage]!.name}`}
+                  </span>
+                  <span className="tabular text-right text-sm font-semibold">
+                    {money(l.budget)}
+                  </span>
+                  <span className="flex items-center justify-end gap-2 text-xs text-muted-foreground">
+                    <span
+                      className={`h-2 w-2 rounded-full ${l.botActive ? "bg-primary" : "bg-warning"}`}
+                    />
+                    {l.botActive ? "Bot" : "Asesor"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -266,7 +331,7 @@ function Pipeline() {
 function Stat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="text-right">
-      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className="text-xs text-muted-foreground">{label}</div>
       <div
         className={`tabular font-display text-[22px] font-semibold leading-tight ${accent ? "text-success" : ""}`}
       >
@@ -288,7 +353,7 @@ function Segmented<T extends string>({
   return (
     <div
       role="radiogroup"
-      className="inline-flex rounded-full bg-muted p-[3px] ring-[0.5px] ring-hairline"
+      className="inline-flex rounded-full bg-muted p-[3px] ring-1 ring-hairline"
     >
       {options.map(([k, label]) => (
         <button
@@ -296,7 +361,7 @@ function Segmented<T extends string>({
           role="radio"
           aria-checked={value === k}
           onClick={() => onChange(k)}
-          className={`press rounded-full px-3 py-1 text-[12px] font-medium transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${value === k ? "bg-popover text-foreground shadow-soft ring-[0.5px] ring-hairline" : "text-muted-foreground hover:text-foreground"}`}
+          className={`press rounded-full px-3 py-1 text-sm font-medium transition-all duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] ${value === k ? "bg-popover text-foreground shadow-soft ring-1 ring-hairline" : "text-muted-foreground hover:text-foreground"}`}
         >
           {label}
         </button>
