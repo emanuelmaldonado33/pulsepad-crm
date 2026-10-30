@@ -13,6 +13,7 @@ import {
   Trash2,
   Video,
   Workflow,
+  Mic,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useCrm } from "@/lib/crm/store";
@@ -61,6 +62,7 @@ function Flows() {
     addMaterial,
     deleteMaterial,
     uploadMaterial,
+    templates,
     members,
   } = useCrm();
   const [editing, setEditing] = useState<{ flow: Flow; isNew: boolean } | null>(null);
@@ -265,6 +267,7 @@ function Flows() {
           flow={editing.flow}
           materials={materials}
           members={members}
+          templates={templates}
           onClose={() => setEditing(null)}
           onSave={(f) => saveFlow(f, editing.isNew)}
         />
@@ -318,12 +321,12 @@ function Library({
         <Upload className="h-6 w-6 text-primary" />
         <span className="text-sm font-semibold">{busy ? "Subiendo…" : "Subir archivos"}</span>
         <span className="text-xs text-muted-foreground">
-          PDF, imágenes o videos cortos · máx. 50 MB
+          PDF, imágenes, videos cortos o notas de voz · máx. 50 MB
         </span>
         <input
           type="file"
           multiple
-          accept="application/pdf,image/*,video/*"
+          accept="application/pdf,image/*,video/*,audio/*"
           className="hidden"
           onChange={(e) => {
             void upload(e.target.files);
@@ -350,6 +353,7 @@ function Library({
           <option value="pdf">Documento PDF</option>
           <option value="video">Video</option>
           <option value="image">Imagen</option>
+          <option value="audio">Nota de voz o audio</option>
         </select>
         <Input
           className="w-56"
@@ -373,6 +377,8 @@ function Library({
             <Video className="h-5 w-5 text-primary" />
           ) : m.kind === "image" ? (
             <ImageIcon className="h-5 w-5 text-primary" />
+          ) : m.kind === "audio" ? (
+            <Mic className="h-5 w-5 text-primary" />
           ) : (
             <FileText className="h-5 w-5 text-primary" />
           )}

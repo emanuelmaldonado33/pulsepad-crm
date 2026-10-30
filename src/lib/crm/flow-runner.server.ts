@@ -2,19 +2,28 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { applyTag, moveToStage, removeTag } from "./automation";
 import { leadPatch, toAccount, toAppointment, toFlow, toLead } from "./db";
-import { dispatchMessage, sendInternalWhatsApp } from "./whatsapp.server";
+import {
+  dispatchMessage,
+  dispatchTemplate,
+  sendInternalWhatsApp,
+  sendingChannel,
+} from "./whatsapp.server";
 import {
   END_NODE,
   branchStart,
   evaluateCondition,
   flowGraph,
+  nextOpening,
   renderText,
   resumeNode,
+  templatePreview,
   waitMs,
+  windowOpen,
   type FlowNode,
   type FlowStep,
   type Material,
   type NotifyTarget,
+  type WaTemplate,
 } from "./flows";
 import type { Account, Lead } from "./types";
 
@@ -81,6 +90,92 @@ export function waitTarget(
   if (!appt) return null;
   const target = new Date(appt.at).getTime() - waitMs(st.amount, st.unit);
   return target <= Date.now() ? null : target;
+}
+
+type RenderCtx = Omit<Parameters<typeof renderText>[1], "material">;
+
+/**
+ * Envía un paso de mensaje respetando la ventana de 24 h: con la ventana abierta (o en
+ * simulación) manda el texto y el adjunto; cerrada, la plantilla del paso. Devuelve "ok" o
+ * el motivo por el que no salió, para el historial del lead.
+ */
+export async function sendStep(
+  sb: Sb,
+  st: Extract<FlowStep, { type: "message" }>,
+  ctx: RenderCtx,
+  material: Material | undefined,
+): Promise<string> {
+  const { lead, account } = ctx;
+  let closed = false;
+  if (await sendingChannel(account.id, lead.source, lead.phone)) {
+    const { data: last } = await sb
+      .from("messages")
+      .select("created_at")
+      .eq("lead_id", lead.id)
+      .eq("sender", "lead")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    closed = !windowOpen(last?.created_at);
+  }
+  if (!closed) {
+    const { data: msg, error } = await sb
+      .from("messages")
+      .insert({ lead_id: lead.id, sender: "bot", body: renderText(st.text, { ...ctx, material }) })
+      .select("id")
+      .single();
+    if (error || !msg) throw error ?? new Error("insert failed");
+    await dispatchMessage({
+      accountId: account.id,
+      phone: lead.phone,
+      source: lead.source,
+      messageId: msg.id,
+      text: renderText(st.text, ctx),
+      material,
+    });
+    return "ok";
+  }
+  if (!st.template)
+    return "no se envió un mensaje porque pasaron más de 24 h desde el último mensaje del lead y el paso no tiene plantilla de WhatsApp";
+  const { data: row } = await sb
+    .from("whatsapp_templates")
+    .select("*")
+    .eq("account_id", account.id)
+    .eq("name", st.template.name)
+    .eq("language", st.template.language)
+    .maybeSingle();
+  if (!row)
+    return `no se envió la plantilla «${st.template.name}»: ya no está aprobada o falta sincronizar las plantillas en Configuración › Canal WhatsApp`;
+  const template: WaTemplate = {
+    name: row.name,
+    language: row.language,
+    category: row.category,
+    body: row.body,
+    headerFormat: row.header_format as WaTemplate["headerFormat"],
+    params: row.params,
+  };
+  const values = template.params.map((_, i) => renderText(st.template!.params[i] ?? "", ctx));
+  const preview = templatePreview(template, values);
+  const { data: msg, error } = await sb
+    .from("messages")
+    .insert({
+      lead_id: lead.id,
+      sender: "bot",
+      body: material && template.headerFormat ? `${preview}\n\n📎 ${material.name}` : preview,
+    })
+    .select("id")
+    .single();
+  if (error || !msg) throw error ?? new Error("insert failed");
+  const r = await dispatchTemplate({
+    accountId: account.id,
+    phone: lead.phone,
+    source: lead.source,
+    messageId: msg.id,
+    template,
+    values,
+    material: template.headerFormat ? material : undefined,
+  });
+  return r.error ? `falló la plantilla «${template.name}»: ${r.error}` : "ok";
 }
 
 /** Ejecuta un enrollment hasta la siguiente espera. Reclama un candado para evitar dobles envíos. */
@@ -174,36 +269,56 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
         .single();
       if (cur?.status !== "active") return "ran";
       if (st.type === "message") {
+        if (lead.optedOutAt) {
+          await done({ status: "cancelled", cancel_reason: "Se dio de baja" });
+          return "ran";
+        }
+        // Fuera de horario hábil: este mismo paso se reintenta en la siguiente apertura.
+        const opensAt = st.businessHours ? nextOpening(account.businessHours, new Date()) : null;
+        if (opensAt) {
+          await done({
+            current_node: nodeId,
+            current_step: executed,
+            next_run_at: opensAt.toISOString(),
+          });
+          return "ran";
+        }
         const material = materials.find((m) => m.id === st.materialId);
-        const { data: msg, error } = await sb
-          .from("messages")
-          .insert({
-            lead_id: lead.id,
-            sender: "bot",
-            body: renderText(st.text, {
-              lead,
-              account,
-              appointment: appt,
-              material,
-              advisor: nameOf(lead.assignedTo),
-            }),
+        const ctx = {
+          lead,
+          account,
+          appointment: appt,
+          advisor: nameOf(lead.assignedTo),
+        };
+        const sent = await sendStep(sb, st, ctx, material);
+        if (sent !== "ok") await event("whatsapp", `Flujo «${flow.name}»: ${sent}`);
+      } else if (st.type === "action" && st.action === "exit_flows") {
+        const { data: left, error } = await sb
+          .from("flow_enrollments")
+          .update({ status: "cancelled", cancel_reason: `Lo sacó el flujo «${flow.name}»` })
+          .eq("lead_id", lead.id)
+          .eq("status", "active")
+          .neq("id", id)
+          .select("id");
+        if (error) throw error;
+        await event(
+          "flujos",
+          left?.length
+            ? `El flujo «${flow.name}» lo sacó de ${left.length === 1 ? "otro flujo" : `${left.length} flujos`}`
+            : `El flujo «${flow.name}» intentó sacarlo de otros flujos, pero no estaba en ninguno`,
+        );
+      } else if (st.type === "action" && st.action === "opt_out") {
+        // La base lo saca de todos los flujos (incluido este) y apaga el bot (0014).
+        const { error } = await sb
+          .from("leads")
+          .update({
+            opted_out_at: new Date().toISOString(),
+            opt_out_reason: `lo dio de baja el flujo «${flow.name}»`,
           })
-          .select("id")
-          .single();
-        if (error || !msg) throw error ?? new Error("insert failed");
-        await dispatchMessage({
-          accountId: account.id,
-          phone: lead.phone,
-          source: lead.source,
-          messageId: msg.id,
-          text: renderText(st.text, {
-            lead,
-            account,
-            appointment: appt,
-            advisor: nameOf(lead.assignedTo),
-          }),
-          material,
-        });
+          .eq("id", lead.id)
+          .is("opted_out_at", null);
+        if (error) throw error;
+        lead = { ...lead, optedOutAt: new Date().toISOString(), botActive: false };
       } else if (st.type === "action") {
         const botBefore = lead.botActive;
         lead =

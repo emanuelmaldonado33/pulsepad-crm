@@ -2,7 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { Copy, Loader2, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
-import { getWhatsAppStatus, saveWhatsApp, type WhatsAppStatus } from "@/lib/crm/whatsapp.functions";
+import {
+  getWhatsAppStatus,
+  saveWhatsApp,
+  syncWhatsAppTemplates,
+  type WhatsAppStatus,
+} from "@/lib/crm/whatsapp.functions";
+import { useCrm } from "@/lib/crm/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -228,7 +234,73 @@ export function WhatsAppChannel({ accountId }: { accountId: string }) {
           el último mensaje del prospecto, Meta sólo permite plantillas aprobadas.
         </p>
       </section>
+      <TemplatesSection accountId={accountId} canSync={!!st.wabaId && st.hasToken} />
     </div>
+  );
+}
+
+/** Plantillas aprobadas por Meta que los flujos usan cuando ya pasaron 24 h. */
+function TemplatesSection({ accountId, canSync }: { accountId: string; canSync: boolean }) {
+  const { templates, reload } = useCrm();
+  const sync = useServerFn(syncWhatsAppTemplates);
+  const [busy, setBusy] = useState(false);
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await sync({ data: { accountId } });
+      if (!r.ok) {
+        toast.error(`No se sincronizó: ${r.error}`);
+        return;
+      }
+      toast.success(
+        `${r.count} plantilla${r.count === 1 ? "" : "s"} aprobada${r.count === 1 ? "" : "s"}` +
+          (r.skipped.length
+            ? ` · se omitieron ${r.skipped.join(", ")} (variables que Pulse aún no llena)`
+            : ""),
+      );
+      await reload();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "No se pudo sincronizar");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="space-y-3 rounded-2xl border bg-card p-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex-1">
+          <div className="font-semibold">Plantillas aprobadas</div>
+          <p className="text-sm text-muted-foreground">
+            Un paso de mensaje usa su plantilla cuando ya pasaron 24 h desde el último mensaje del
+            lead. Créalas y apruébalas en el Administrador de WhatsApp de Meta y luego sincronízalas
+            aquí.
+          </p>
+        </div>
+        <Button variant="outline" disabled={busy || !canSync} onClick={run}>
+          {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />} Sincronizar desde Meta
+        </Button>
+      </div>
+      {!canSync && (
+        <p className="text-xs text-muted-foreground">
+          Guarda el WABA ID y el Access Token para poder sincronizar.
+        </p>
+      )}
+      {templates.length > 0 ? (
+        <ul className="divide-y text-sm">
+          {templates.map((t) => (
+            <li key={`${t.name}-${t.language}`} className="py-2">
+              <div className="font-mono text-xs">
+                {t.name} · {t.language}
+                {t.headerFormat ? ` · lleva ${t.headerFormat.toLowerCase()}` : ""}
+              </div>
+              <div className="whitespace-pre-line text-muted-foreground">{t.body}</div>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">Aún no hay plantillas sincronizadas.</p>
+      )}
+    </section>
   );
 }
 

@@ -1,3 +1,5 @@
+import type { BusinessHours } from "./flows";
+
 export type Sender = "lead" | "bot" | "asesor";
 
 export interface Message {
@@ -26,6 +28,8 @@ export interface Account {
   standardTags: string[];
   /** Pausar el bot cuando un asesor escribe a mano (por defecto sí). */
   autoPauseBot?: boolean;
+  /** Horario hábil para los mensajes «solo en horario hábil» de los flujos. */
+  businessHours?: BusinessHours;
 }
 
 /** Aviso interno para una persona del equipo (notifications). */
@@ -73,6 +77,9 @@ export interface Lead {
   assignedTo?: string | null;
   /** Resumen de la conversación que deja la IA para el asesor. */
   aiSummary?: string | null;
+  /** Dado de baja: no recibe mensajes automáticos ni entra a flujos. */
+  optedOutAt?: string | null;
+  optOutReason?: string | null;
   messages: Message[];
   createdAt: string;
 }

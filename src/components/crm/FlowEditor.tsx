@@ -14,6 +14,8 @@ import {
   Repeat,
   BellRing,
   UserCheck,
+  FileCheck2,
+  AlarmClock,
 } from "lucide-react";
 import { STAGES, type Member } from "@/lib/crm/types";
 import { MAX_BRANCH_DEPTH } from "@/lib/crm/flow-io";
@@ -24,6 +26,8 @@ import {
   MESSAGE_INTENTS,
   VARIABLES,
   allSteps,
+  stepsAtRiskOfClosedWindow,
+  templatePreview,
   triggerProblem,
   materialIcon,
   sid,
@@ -36,6 +40,7 @@ import {
   type NotifyTarget,
   type TriggerConfig,
   type TriggerType,
+  type WaTemplate,
 } from "@/lib/crm/flows";
 import {
   Dialog,
@@ -76,6 +81,105 @@ const NEW_STEP: Record<FlowStep["type"], () => FlowStep> = {
 
 /** Equipo de la subcuenta, para elegir a quién avisar o asignar. */
 const MembersCtx = createContext<Member[]>([]);
+/** Plantillas aprobadas y pasos de mensaje que pueden caer con la ventana de 24 h cerrada. */
+const WhatsAppCtx = createContext<{ templates: WaTemplate[]; risky: Set<string> }>({
+  templates: [],
+  risky: new Set(),
+});
+
+/** Plantilla para cuando ya pasaron 24 h desde el último mensaje del lead. */
+function TemplatePicker({
+  st,
+  set,
+}: {
+  st: Extract<FlowStep, { type: "message" }>;
+  set: (st: FlowStep) => void;
+}) {
+  const { templates, risky } = useContext(WhatsAppCtx);
+  const ref = st.template ?? null;
+  const tpl = ref
+    ? templates.find((t) => t.name === ref.name && t.language === ref.language)
+    : undefined;
+  const key = (t: { name: string; language: string }) => `${t.name}|${t.language}`;
+  return (
+    <div className="space-y-2 rounded-lg border border-dashed p-2">
+      <label className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <FileCheck2 className="h-3.5 w-3.5" /> Si pasaron más de 24 h, enviar la plantilla
+        <select
+          className={`${sel} h-8 text-xs`}
+          aria-label="Plantilla de WhatsApp"
+          value={ref ? key(ref) : ""}
+          onChange={(e) => {
+            const t = templates.find((x) => key(x) === e.target.value);
+            set({
+              ...st,
+              template: t
+                ? { name: t.name, language: t.language, params: t.params.map(() => "") }
+                : null,
+            });
+          }}
+        >
+          <option value="">Ninguna (no se envía)</option>
+          {ref && !tpl && <option value={key(ref)}>{ref.name} (no sincronizada)</option>}
+          {templates.map((t) => (
+            <option key={key(t)} value={key(t)}>
+              {t.name} · {t.language}
+            </option>
+          ))}
+        </select>
+      </label>
+      {tpl && ref && (
+        <>
+          <p className="whitespace-pre-line rounded bg-muted/60 p-2 text-xs">
+            {templatePreview(
+              tpl,
+              tpl.params.map((p, i) => ref.params[i] || `{{${p}}}`),
+            )}
+          </p>
+          {tpl.params.map((p, i) => (
+            <label key={p} className="flex items-center gap-2 text-xs">
+              <span className="w-16 font-mono text-muted-foreground">{`{{${p}}}`}</span>
+              <Input
+                className="h-8 text-xs"
+                aria-label={`Valor de {{${p}}}`}
+                value={ref.params[i] ?? ""}
+                placeholder="ej. {{nombre}}"
+                onChange={(e) =>
+                  set({
+                    ...st,
+                    template: {
+                      ...ref,
+                      params: tpl.params.map((_, j) =>
+                        j === i ? e.target.value : (ref.params[j] ?? ""),
+                      ),
+                    },
+                  })
+                }
+              />
+            </label>
+          ))}
+          {tpl.headerFormat && !st.materialId && (
+            <p className="text-xs text-amber-700 dark:text-amber-300">
+              Esta plantilla lleva {tpl.headerFormat.toLowerCase()} en el encabezado: adjunta el
+              archivo en este paso.
+            </p>
+          )}
+        </>
+      )}
+      {!templates.length && (
+        <p className="text-xs text-muted-foreground">
+          Sincroniza tus plantillas aprobadas en Configuración › Canal WhatsApp.
+        </p>
+      )}
+      {risky.has(st.id) && (
+        <p className="text-xs text-amber-700 dark:text-amber-300">
+          Este mensaje va después de esperas de 24 h o más: si el lead no ha escrito en ese tiempo,
+          WhatsApp no deja enviar texto libre y sin plantilla el paso se salta.
+        </p>
+      )}
+    </div>
+  );
+}
 
 const ICON = {
   message: MessageSquare,
@@ -564,6 +668,16 @@ function StepCard({
             ))}
           </div>
           <label className="flex items-center gap-2 text-xs text-muted-foreground">
+            <AlarmClock className="h-3.5 w-3.5" />
+            <Switch
+              aria-label="Solo en horario hábil"
+              checked={!!st.businessHours}
+              onCheckedChange={(v) => set({ ...st, businessHours: v })}
+            />
+            Solo en horario hábil (si cae fuera, espera a que abra el negocio)
+          </label>
+          <TemplatePicker st={st} set={set} />
+          <label className="flex items-center gap-2 text-xs text-muted-foreground">
             <Paperclip className="h-3.5 w-3.5" /> Adjuntar
             <select
               className={sel}
@@ -623,8 +737,13 @@ function StepCard({
             <option value="set_stage">Cambiar etapa</option>
             <option value="bot_off">Apagar el bot para este lead</option>
             <option value="bot_on">Encender el bot para este lead</option>
+            <option value="exit_flows">Sacarlo de todos los demás flujos</option>
+            <option value="opt_out">Dar de baja (no más mensajes automáticos)</option>
           </select>
-          {st.action === "bot_on" || st.action === "bot_off" ? null : st.action === "set_stage" ? (
+          {st.action === "bot_on" ||
+          st.action === "bot_off" ||
+          st.action === "exit_flows" ||
+          st.action === "opt_out" ? null : st.action === "set_stage" ? (
             <select
               className={sel}
               value={st.value}
@@ -768,12 +887,14 @@ export function FlowEditor({
   flow,
   materials,
   members = [],
+  templates = [],
   onClose,
   onSave,
 }: {
   flow: Flow;
   materials: Material[];
   members?: Member[];
+  templates?: WaTemplate[];
   onClose: () => void;
   onSave: (f: Flow) => Promise<boolean>;
 }) {
@@ -790,96 +911,114 @@ export function FlowEditor({
   const asksAdvisor = every.some(
     (s) => s.type === "condition" && s.rule.kind === "advisor_replied",
   );
+  const risky = stepsAtRiskOfClosedWindow(f.steps);
+  const emptyMessage = every.some((s) => s.type === "message" && !s.text.trim() && !s.materialId);
 
   return (
     <MembersCtx.Provider value={members}>
-      <Dialog open onOpenChange={(o) => !o && onClose()}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Constructor de flujo</DialogTitle>
-          </DialogHeader>
-          <Input
-            value={f.name}
-            onChange={(e) => setF({ ...f, name: e.target.value })}
-            placeholder="Nombre del flujo"
-            className="font-semibold"
-          />
+      <WhatsAppCtx.Provider value={{ templates, risky }}>
+        <Dialog open onOpenChange={(o) => !o && onClose()}>
+          <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Constructor de flujo</DialogTitle>
+            </DialogHeader>
+            <Input
+              value={f.name}
+              onChange={(e) => setF({ ...f, name: e.target.value })}
+              placeholder="Nombre del flujo"
+              className="font-semibold"
+            />
 
-          <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-3">
-            <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
-              <Zap className="h-3.5 w-3.5" /> Disparador
+            <div className="rounded-xl border-2 border-primary/40 bg-primary/5 p-3">
+              <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-primary">
+                <Zap className="h-3.5 w-3.5" /> Disparador
+              </div>
+              <TriggerEditor f={f} setF={setF} />
             </div>
-            <TriggerEditor f={f} setF={setF} />
-          </div>
 
-          <StepList
-            steps={f.steps}
-            depth={0}
-            materials={materials}
-            onChange={(steps) => setF((p) => ({ ...p, steps }))}
-          />
-
-          <label className="flex items-start gap-3 rounded-xl border bg-muted/40 p-3 text-sm">
-            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <span className="flex-1">
-              Regla anti-spam: si el prospecto responde o un asesor interviene, cancelar el flujo
-              automáticamente y pasar el control al bot o al asesor.
-            </span>
-            <Switch
-              aria-label="Regla anti-spam"
-              checked={f.stopOnReply}
-              onCheckedChange={(v) => setF({ ...f, stopOnReply: v })}
+            <StepList
+              steps={f.steps}
+              depth={0}
+              materials={materials}
+              onChange={(steps) => setF((p) => ({ ...p, steps }))}
             />
-          </label>
-          <label className="flex items-start gap-3 rounded-xl border bg-muted/40 p-3 text-sm">
-            <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-            <span className="flex-1">
-              Permitir reingreso: un lead que ya terminó este flujo (o se canceló) puede volver a
-              entrar si se cumple el disparador otra vez. Nunca entra dos veces al mismo tiempo.
-            </span>
-            <Switch
-              aria-label="Permitir reingreso"
-              checked={f.allowReentry}
-              onCheckedChange={(v) => setF({ ...f, allowReentry: v })}
-            />
-          </label>
-          {f.allowReentry && CONVERSATION_TRIGGERS.includes(f.triggerType) && (
-            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
-              Con reingreso, este flujo vuelve a empezar cada vez que el lead escriba algo que
-              cumpla el disparador. Desactívalo si solo debe correr una vez por lead.
-            </p>
-          )}
-          {asksAdvisor && f.stopOnReply && (
-            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
-              Este flujo pregunta si un asesor le escribió, pero con la regla anti-spam activa el
-              flujo se cancela en cuanto el asesor escribe. Desactívala para usar esa condición.
-            </p>
-          )}
-          {asksReplied && f.stopOnReply && (
-            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
-              Este flujo pregunta «¿Respondió?», pero con la regla anti-spam activa el flujo se
-              cancela en cuanto el lead responde, así que nunca llegará a la rama «Sí». Desactívala
-              para usar esa condición.
-            </p>
-          )}
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={onClose}>
-              Cancelar
-            </Button>
-            <Button
-              disabled={saving || !f.name.trim() || triggerProblem(f) != null || missingTag}
-              onClick={async () => {
-                setSaving(true);
-                if (await onSave(f)) onClose();
-                setSaving(false);
-              }}
-            >
-              Guardar flujo
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            <label className="flex items-start gap-3 rounded-xl border bg-muted/40 p-3 text-sm">
+              <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span className="flex-1">
+                Regla anti-spam: si el prospecto responde o un asesor interviene, cancelar el flujo
+                automáticamente y pasar el control al bot o al asesor.
+              </span>
+              <Switch
+                aria-label="Regla anti-spam"
+                checked={f.stopOnReply}
+                onCheckedChange={(v) => setF({ ...f, stopOnReply: v })}
+              />
+            </label>
+            <label className="flex items-start gap-3 rounded-xl border bg-muted/40 p-3 text-sm">
+              <Repeat className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+              <span className="flex-1">
+                Permitir reingreso: un lead que ya terminó este flujo (o se canceló) puede volver a
+                entrar si se cumple el disparador otra vez. Nunca entra dos veces al mismo tiempo.
+              </span>
+              <Switch
+                aria-label="Permitir reingreso"
+                checked={f.allowReentry}
+                onCheckedChange={(v) => setF({ ...f, allowReentry: v })}
+              />
+            </label>
+            {f.allowReentry && CONVERSATION_TRIGGERS.includes(f.triggerType) && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                Con reingreso, este flujo vuelve a empezar cada vez que el lead escriba algo que
+                cumpla el disparador. Desactívalo si solo debe correr una vez por lead.
+              </p>
+            )}
+            {asksAdvisor && f.stopOnReply && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                Este flujo pregunta si un asesor le escribió, pero con la regla anti-spam activa el
+                flujo se cancela en cuanto el asesor escribe. Desactívala para usar esa condición.
+              </p>
+            )}
+            {risky.size > 0 && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                {risky.size === 1 ? "Un mensaje puede" : `${risky.size} mensajes pueden`} llegar
+                cuando ya pasaron 24 h desde el último mensaje del lead y no{" "}
+                {risky.size === 1 ? "tiene" : "tienen"} plantilla de WhatsApp. Si eso pasa, el paso
+                se salta y queda anotado en el historial del lead.
+              </p>
+            )}
+            {asksReplied && f.stopOnReply && (
+              <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-700 dark:text-amber-300">
+                Este flujo pregunta «¿Respondió?», pero con la regla anti-spam activa el flujo se
+                cancela en cuanto el lead responde, así que nunca llegará a la rama «Sí».
+                Desactívala para usar esa condición.
+              </p>
+            )}
+
+            <DialogFooter>
+              <Button variant="ghost" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                disabled={
+                  saving ||
+                  !f.name.trim() ||
+                  triggerProblem(f) != null ||
+                  missingTag ||
+                  emptyMessage
+                }
+                onClick={async () => {
+                  setSaving(true);
+                  if (await onSave(f)) onClose();
+                  setSaving(false);
+                }}
+              >
+                Guardar flujo
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </WhatsAppCtx.Provider>
     </MembersCtx.Provider>
   );
 }

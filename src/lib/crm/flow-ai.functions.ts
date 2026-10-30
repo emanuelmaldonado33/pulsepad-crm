@@ -35,10 +35,10 @@ Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
   "allowReentry": boolean,   // false = un lead que ya pasó por el flujo no vuelve a entrar (recomendado en disparadores de conversación)
   "stopOnReply": true,
   "steps": [
-    { "type": "message", "text": string, "material": string | null },   // material = nombre EXACTO de la biblioteca o null
+    { "type": "message", "text": string, "material": string | null, "businessHours": boolean },   // material = nombre EXACTO de la biblioteca o null; businessHours = esperar a horario hábil (recomendado en seguimientos)
     { "type": "wait", "amount": number, "unit": "min" | "hour" | "day" },
     { "type": "wait_appt", "amount": number, "unit": "min" | "hour" | "day" },   // espera hasta X antes de la próxima cita
-    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off", "value": string },   // bot_on/bot_off: value ""
+    { "type": "action", "action": "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off" | "exit_flows" | "opt_out", "value": string },   // bot_on/bot_off/exit_flows (sacar de los demás flujos)/opt_out (dar de baja): value ""
     { "type": "assign", "mode": "round_robin", "userIds": [] },   // asigna un asesor por turnos entre todo el equipo disponible
     { "type": "notify", "to": ["assigned" | "admins"], "text": string, "whatsapp": boolean },   // aviso interno al equipo con resumen de la IA y enlace al chat
     { "type": "condition", "rule": Regla, "yes": [pasos], "no": [pasos] },   // rama sí/no; al terminar la rama sigue el paso de abajo

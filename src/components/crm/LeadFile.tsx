@@ -42,7 +42,7 @@ function NumField({
 }
 
 export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean }) {
-  const { updateLead, account, members, assignLead } = useCrm();
+  const { updateLead, account, members, assignLead, setOptOut } = useCrm();
   const quick = Array.from(new Set([...Object.keys(TAG_RULES), ...account.standardTags])).filter(
     (t) => !lead.tags.includes(t),
   );
@@ -72,6 +72,50 @@ export function LeadFile({ lead, readOnly }: { lead: Lead; readOnly?: boolean })
           {stageLabel(lead)}
         </div>
       </div>
+
+      {lead.optedOutAt ? (
+        <section className="rounded-xl border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <div className="font-semibold text-destructive">Dado de baja</div>
+          <p className="text-xs text-muted-foreground">
+            No recibe mensajes automáticos ni entra a flujos
+            {lead.optOutReason ? ` (${lead.optOutReason})` : ""}. Un asesor todavía puede escribirle
+            a mano si el lead vuelve a escribir.
+          </p>
+          {!readOnly && (
+            <button
+              type="button"
+              className="mt-2 text-xs font-semibold text-primary hover:underline"
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "¿Quitar la baja? El lead podrá volver a recibir mensajes automáticos.",
+                  )
+                )
+                  void setOptOut(lead.id, false);
+              }}
+            >
+              Quitar la baja
+            </button>
+          )}
+        </section>
+      ) : (
+        !readOnly && (
+          <button
+            type="button"
+            className="text-xs text-muted-foreground hover:text-destructive hover:underline"
+            onClick={() => {
+              if (
+                window.confirm(
+                  "¿Dar de baja a este lead? Sale de todos los flujos y el bot se apaga.",
+                )
+              )
+                void setOptOut(lead.id, true);
+            }}
+          >
+            Dar de baja (no enviar mensajes automáticos)
+          </button>
+        )
+      )}
 
       <section className="grid grid-cols-2 gap-3 rounded-xl border bg-card p-3">
         {readOnly ? (

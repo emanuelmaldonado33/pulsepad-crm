@@ -76,7 +76,7 @@ ${acc.qualification_rules}
 
 ETAPAS DEL PIPELINE: P0 Nuevo, P1 Contactado, P2 En calificación, P3 Material/Video enviado, P4 Perfilado (monto/plazo), P5 Cita agendada, P6 Seguimiento, P7 Ganado/No califica.
 ${materialRule}
-En message_intent clasifica sólo el último mensaje del prospecto: quiere_comprar (quiere apartar, comprar o pagar), pide_precio (pregunta precio, costo o cotización), pide_cita (pide llamada, visita o cita), objecion (duda o freno: precio alto, desconfianza, "lo voy a pensar"), no_interesado, quiere_humano (pide hablar con una persona) u otro.
+En message_intent clasifica sólo el último mensaje del prospecto: quiere_comprar (quiere apartar, comprar o pagar), pide_precio (pregunta precio, costo o cotización), pide_cita (pide llamada, visita o cita), objecion (duda o freno: precio alto, desconfianza, "lo voy a pensar"), no_interesado, quiere_humano (pide hablar con una persona), pide_baja (pide que ya no le escriban o no recibir más mensajes; no basta con que no le interese) u otro.
 Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y confirma la cita para mañana a las 11:00.
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
@@ -210,7 +210,10 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       .insert({ account_id: acc.id, lead_id: lead.id, at: at.toISOString(), kind: "Llamada" });
     events.push({ kind: "cita", text: "Cita creada en la agenda" });
   }
-  const reply = o.reply.trim() || null;
+  // Pidió no recibir mensajes: la base lo da de baja (0014) y no se le contesta.
+  const optOut = o.message_intent === "pide_baja";
+  if (optOut) events.push({ kind: "bot", text: "Pidió no recibir mensajes: dado de baja" });
+  const reply = optOut ? null : o.reply.trim() || null;
   if (reply) {
     const { data: bm } = await sb
       .from("messages")

@@ -553,4 +553,86 @@ SELECT test_helpers.denied('anon lee avisos', $$SELECT * FROM public.notificatio
 SELECT test_helpers.denied('anon lee historial', $$SELECT * FROM public.lead_events$$);
 RESET ROLE;
 
+-- ===== Reglas de WhatsApp: bajas y plantillas (0014) =====
+SET ROLE service_role;
+SELECT test_helpers.eq('detecta «baja» como mensaje completo', public.flow_is_opt_out('Baja'), true);
+SELECT test_helpers.eq('detecta frases en cualquier parte',
+  public.flow_is_opt_out('Por favor ya no me escriban, gracias'), true);
+SELECT test_helpers.eq('no confunde «bajaron los precios»',
+  public.flow_is_opt_out('¿Ya bajaron los precios?'), false);
+SELECT test_helpers.eq('no confunde «no me interesa»', public.flow_is_opt_out('no me interesa'), false);
+
+INSERT INTO public.leads (id, account_id, name, bot_active) VALUES ('b-lead', 'espacio-fx', 'Baja', true);
+INSERT INTO public.flows (id, account_id, name, active, trigger_type, allow_reentry, stop_on_reply)
+  VALUES ('B-flujo', 'espacio-fx', 'responde', true, 'reply', true, false);
+INSERT INTO public.flows (id, account_id, name, stop_on_reply) VALUES ('B-otro', 'espacio-fx', 'otro', false);
+INSERT INTO public.flow_enrollments (id, flow_id, lead_id, account_id) VALUES ('B-e', 'B-otro', 'b-lead', 'espacio-fx');
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('b-lead', 'lead', 'hola');
+-- Otros flujos «el lead responde» de pruebas anteriores también lo inscriben.
+CREATE TEMP TABLE antes_baja AS
+  SELECT count(*) AS n FROM public.flow_enrollments WHERE lead_id = 'b-lead' AND status = 'active';
+SELECT test_helpers.eq('antes de la baja el mensaje inscribe',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'b-lead' AND flow_id = 'B-flujo' AND status = 'active'), 1::bigint);
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('b-lead', 'lead', 'No me escriban más');
+SELECT test_helpers.eq('queda dado de baja',
+  (SELECT opted_out_at IS NOT NULL FROM public.leads WHERE id = 'b-lead'), true);
+SELECT test_helpers.eq('con el motivo',
+  (SELECT opt_out_reason FROM public.leads WHERE id = 'b-lead'), 'escribió «No me escriban más»'::text);
+SELECT test_helpers.eq('el bot se apaga', (SELECT bot_active FROM public.leads WHERE id = 'b-lead'), false);
+SELECT test_helpers.eq('sale de todos los flujos (también del que ese mensaje disparó)',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'b-lead' AND status = 'active'), 0::bigint);
+SELECT test_helpers.eq('con el motivo de la baja',
+  (SELECT count(*) >= (SELECT n FROM antes_baja) FROM public.flow_enrollments
+    WHERE lead_id = 'b-lead' AND cancel_reason = 'Se dio de baja'), true);
+SELECT test_helpers.eq('queda en el historial',
+  (SELECT count(*) FROM public.lead_events WHERE lead_id = 'b-lead' AND kind = 'baja'), 1::bigint);
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('b-lead', 'lead', 'hola otra vez');
+SELECT test_helpers.eq('dado de baja no vuelve a entrar por disparador',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'b-lead' AND status = 'active'), 0::bigint);
+SELECT test_helpers.denied('ni a mano',
+  $$INSERT INTO public.flow_enrollments (flow_id, lead_id, account_id) VALUES ('B-otro', 'b-lead', 'espacio-fx')$$);
+UPDATE public.leads SET bot_active = true WHERE id = 'b-lead';
+SELECT test_helpers.eq('no se le puede encender el bot',
+  (SELECT bot_active FROM public.leads WHERE id = 'b-lead'), false);
+
+-- Por intención de la IA.
+INSERT INTO public.leads (id, account_id, name, bot_active) VALUES ('b-ia', 'espacio-fx', 'IA', true);
+INSERT INTO public.messages (id, lead_id, sender, body)
+  VALUES ('0b000000-0000-0000-0000-000000000001', 'b-ia', 'lead', 'ya estuvo, gracias');
+SELECT test_helpers.eq('el texto solo no da de baja',
+  (SELECT opted_out_at IS NULL FROM public.leads WHERE id = 'b-ia'), true);
+UPDATE public.messages SET ai_intent = 'pide_baja' WHERE id = '0b000000-0000-0000-0000-000000000001';
+SELECT test_helpers.eq('la IA lo da de baja',
+  (SELECT opt_out_reason FROM public.leads WHERE id = 'b-ia'), 'la IA detectó que pide no recibir mensajes'::text);
+
+INSERT INTO public.whatsapp_templates (account_id, name, language, body, params)
+  VALUES ('espacio-fx', 'seguimiento', 'es_MX', 'Hola {{1}}', '{1}');
+RESET ROLE;
+
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.affects('el equipo quita la baja desde la ficha',
+  $$UPDATE public.leads SET opted_out_at = NULL WHERE id = 'b-lead'$$, 1);
+SELECT test_helpers.eq('y queda en el historial',
+  (SELECT count(*) FROM public.lead_events WHERE lead_id = 'b-lead' AND kind = 'baja'), 2::bigint);
+SELECT test_helpers.affects('ve las plantillas de su cuenta',
+  $$SELECT 1 FROM public.whatsapp_templates$$, 1);
+SELECT test_helpers.denied('no crea plantillas',
+  $$INSERT INTO public.whatsapp_templates (account_id, name, language) VALUES ('espacio-fx', 'x', 'es')$$);
+SELECT test_helpers.no_rows('member no cambia el horario hábil',
+  $$UPDATE public.accounts SET business_hours = '{"days": []}' WHERE id = 'espacio-fx'$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.eq('intruso: plantillas ajenas', (SELECT count(*) FROM public.whatsapp_templates), 0::bigint);
+SELECT test_helpers.no_rows('intruso no da de baja leads ajenos',
+  $$UPDATE public.leads SET opted_out_at = now() WHERE id = 'b-ia'$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user(NULL);
+SET ROLE anon;
+SELECT test_helpers.denied('anon lee plantillas', $$SELECT * FROM public.whatsapp_templates$$);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'

@@ -61,3 +61,95 @@ describe("planChannelSave (phone_number_id de otra cuenta)", () => {
     expect(check).toHaveBeenCalledWith("2000002", "t");
   });
 });
+
+describe("plantillas y archivos de WhatsApp", async () => {
+  const { mediaType, parseMetaTemplates, templatePayload } = await import("./whatsapp.server");
+  const pdf = {
+    id: "m",
+    accountId: "a",
+    name: "Catálogo",
+    kind: "pdf" as const,
+    url: "https://x/c.pdf",
+  };
+
+  it("solo guarda plantillas aprobadas que Pulse sabe llenar", () => {
+    const { rows, skipped } = parseMetaTemplates([
+      {
+        name: "seguimiento",
+        language: "es_MX",
+        status: "APPROVED",
+        category: "MARKETING",
+        components: [{ type: "BODY", text: "Hola {{1}}, ¿viste {{2}}? {{1}}" }],
+      },
+      {
+        name: "catalogo",
+        language: "es_MX",
+        status: "APPROVED",
+        components: [
+          { type: "HEADER", format: "DOCUMENT" },
+          { type: "BODY", text: "Hola {{nombre}}" },
+        ],
+      },
+      { name: "pendiente", language: "es", status: "PENDING", components: [] },
+      {
+        name: "con_variable_arriba",
+        language: "es",
+        status: "APPROVED",
+        components: [{ type: "HEADER", format: "TEXT", text: "Hola {{1}}" }],
+      },
+      {
+        name: "boton_variable",
+        language: "es",
+        status: "APPROVED",
+        components: [{ type: "BUTTONS", buttons: [{ type: "URL", url: "https://x/{{1}}" }] }],
+      },
+    ]);
+    expect(rows).toEqual([
+      expect.objectContaining({ name: "seguimiento", params: ["1", "2"], headerFormat: null }),
+      expect.objectContaining({ name: "catalogo", params: ["nombre"], headerFormat: "DOCUMENT" }),
+    ]);
+    expect(skipped).toEqual(["con_variable_arriba", "boton_variable"]);
+  });
+
+  it("arma el envío con variables por posición o por nombre y el archivo del encabezado", () => {
+    expect(
+      templatePayload({ name: "t", language: "es_MX", headerFormat: null, params: ["1"] }, [""]),
+    ).toEqual({
+      type: "template",
+      template: {
+        name: "t",
+        language: { code: "es_MX" },
+        components: [{ type: "body", parameters: [{ type: "text", text: "-" }] }],
+      },
+    });
+    const p = templatePayload(
+      { name: "c", language: "es", headerFormat: "DOCUMENT", params: ["nombre"] },
+      ["Ana"],
+      pdf,
+    );
+    expect(p.template.components).toEqual([
+      {
+        type: "header",
+        parameters: [
+          {
+            type: "document",
+            document: { link: pdf.url, caption: "Catálogo", filename: "Catálogo.pdf" },
+          },
+        ],
+      },
+      { type: "body", parameters: [{ type: "text", parameter_name: "nombre", text: "Ana" }] },
+    ]);
+  });
+
+  it("exige el archivo cuando la plantilla lo lleva en el encabezado", () => {
+    expect(() =>
+      templatePayload({ name: "c", language: "es", headerFormat: "VIDEO", params: [] }, [], pdf),
+    ).toThrow(/video/);
+  });
+
+  it("las notas de voz van como audio y los videos de YouTube como enlace", () => {
+    expect(mediaType({ ...pdf, kind: "audio", url: "https://x/n.ogg" })).toBe("audio");
+    expect(mediaType({ ...pdf, kind: "video", url: "https://youtu.be/abc" })).toBeNull();
+    expect(mediaType(pdf)).toBe("document");
+  });
+});

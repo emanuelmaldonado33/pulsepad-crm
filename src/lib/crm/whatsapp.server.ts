@@ -1,4 +1,4 @@
-import type { Material } from "./flows";
+import type { Material, WaTemplate } from "./flows";
 
 const GRAPH_API_VERSION = process.env["WHATSAPP_GRAPH_API_VERSION"] ?? "v26.0";
 const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -44,9 +44,31 @@ async function graphSend(phoneNumberId: string, token: string, payload: Record<s
   return body.messages?.[0]?.id ?? null;
 }
 
+/** Canal real para escribirle a este lead; null = simulación (sin canal o lead del simulador). */
+export async function sendingChannel(accountId: string, source: string, phone: string) {
+  if (source === "Simulador" || digits(phone).length < 10) return null;
+  return getChannel(accountId);
+}
+
+const MEDIA_TYPE = { video: "video", image: "image", pdf: "document", audio: "audio" } as const;
+
+/** Tipo de archivo de WhatsApp para un material; null = se manda como enlace (YouTube, Vimeo). */
+export function mediaType(m: Material) {
+  if (m.kind === "video" && /youtu\.?be|vimeo/.test(m.url)) return null;
+  return MEDIA_TYPE[m.kind] ?? null;
+}
+
+/** Contenido del archivo. Las notas de voz no llevan pie de foto en WhatsApp. */
+const mediaObject = (m: Material, type: NonNullable<ReturnType<typeof mediaType>>) => ({
+  link: m.url,
+  ...(type === "audio" ? {} : { caption: m.name }),
+  ...(type === "document" ? { filename: `${m.name}.pdf` } : {}),
+});
+
 /**
  * Envía un mensaje ya guardado por WhatsApp Cloud API. Si la subcuenta no tiene canal
- * (o el lead es de simulación) lo marca como "simulado" sin fallar.
+ * (o el lead es de simulación) lo marca como "simulado" sin fallar. El texto puede ir vacío
+ * si lleva archivo.
  */
 export async function dispatchMessage(opts: {
   accountId: string;
@@ -57,38 +79,31 @@ export async function dispatchMessage(opts: {
   material?: Material | undefined;
 }) {
   const sb = await admin();
-  const ch = opts.source === "Simulador" ? null : await getChannel(opts.accountId);
-  if (!ch || digits(opts.phone).length < 10) {
+  const ch = await sendingChannel(opts.accountId, opts.source, opts.phone);
+  if (!ch) {
     await sb.from("messages").update({ wa_status: "simulado" }).eq("id", opts.messageId);
     return "simulado" as const;
   }
   const to = digits(opts.phone);
   try {
-    const waId = await graphSend(ch.phone_number_id, ch.access_token, {
-      to,
-      type: "text",
-      text: { body: opts.text.slice(0, 4096), preview_url: true },
-    });
     const m = opts.material;
-    if (m) {
-      const type =
-        m.kind === "video" && !/youtu\.?be|vimeo/.test(m.url)
-          ? "video"
-          : m.kind === "image"
-            ? "image"
-            : m.kind === "pdf"
-              ? "document"
-              : null;
-      if (type)
-        await graphSend(ch.phone_number_id, ch.access_token, {
-          to,
-          type,
-          [type]: {
-            link: m.url,
-            caption: m.name,
-            ...(type === "document" ? { filename: `${m.name}.pdf` } : {}),
-          },
-        });
+    const type = m ? mediaType(m) : null;
+    // Lo que WhatsApp no recibe como archivo viaja como enlace dentro del texto.
+    const text = m && !type ? `${opts.text}\n\n${m.name}: ${m.url}`.trim() : opts.text.trim();
+    let waId: string | null = null;
+    if (text)
+      waId = await graphSend(ch.phone_number_id, ch.access_token, {
+        to,
+        type: "text",
+        text: { body: text.slice(0, 4096), preview_url: true },
+      });
+    if (m && type) {
+      const mediaId = await graphSend(ch.phone_number_id, ch.access_token, {
+        to,
+        type,
+        [type]: mediaObject(m, type),
+      });
+      waId ??= mediaId;
     }
     await sb
       .from("messages")
@@ -110,9 +125,150 @@ export async function dispatchMessage(opts: {
 }
 
 /**
+ * Cuerpo de envío de una plantilla aprobada. values trae un texto por variable del cuerpo; si
+ * la plantilla tiene encabezado con archivo, usa el adjunto del paso. Lanza un error en español
+ * si falta algo, para dejarlo en el historial del lead.
+ */
+export function templatePayload(
+  t: Pick<WaTemplate, "name" | "language" | "headerFormat" | "params">,
+  values: string[],
+  material?: Material,
+) {
+  const components: Record<string, unknown>[] = [];
+  if (t.headerFormat) {
+    const type = t.headerFormat.toLowerCase() as "image" | "video" | "document";
+    if (!material || mediaType(material) !== type)
+      throw new Error(
+        `La plantilla «${t.name}» necesita un archivo de tipo ${type === "document" ? "PDF" : type === "image" ? "imagen" : "video"} adjunto en el paso`,
+      );
+    components.push({
+      type: "header",
+      parameters: [{ type, [type]: mediaObject(material, type) }],
+    });
+  }
+  if (t.params.length)
+    components.push({
+      type: "body",
+      parameters: t.params.map((key, i) => ({
+        type: "text",
+        ...(/^\d+$/.test(key) ? {} : { parameter_name: key }),
+        // Meta rechaza variables vacías.
+        text: (values[i] ?? "").trim().slice(0, 1000) || "-",
+      })),
+    });
+  return {
+    type: "template",
+    template: { name: t.name, language: { code: t.language }, components },
+  };
+}
+
+/** Envía una plantilla aprobada (ventana de 24 h cerrada) para un mensaje ya guardado. */
+export async function dispatchTemplate(opts: {
+  accountId: string;
+  phone: string;
+  source: string;
+  messageId: string;
+  template: WaTemplate;
+  values: string[];
+  material?: Material | undefined;
+}) {
+  const sb = await admin();
+  const ch = await sendingChannel(opts.accountId, opts.source, opts.phone);
+  if (!ch) {
+    await sb.from("messages").update({ wa_status: "simulado" }).eq("id", opts.messageId);
+    return { status: "simulado" as const, error: null };
+  }
+  try {
+    const waId = await graphSend(ch.phone_number_id, ch.access_token, {
+      to: digits(opts.phone),
+      ...templatePayload(opts.template, opts.values, opts.material),
+    });
+    await sb
+      .from("messages")
+      .update({ wa_status: "enviado", wa_message_id: waId })
+      .eq("id", opts.messageId);
+    return { status: "enviado" as const, error: null };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error("whatsapp template failed", opts.accountId, msg);
+    await sb.from("messages").update({ wa_status: "fallido" }).eq("id", opts.messageId);
+    return { status: "fallido" as const, error: msg };
+  }
+}
+
+type MetaTemplate = {
+  name?: string;
+  language?: string;
+  status?: string;
+  category?: string;
+  components?: {
+    type?: string;
+    format?: string;
+    text?: string;
+    buttons?: { type?: string; url?: string }[];
+  }[];
+};
+
+const VARS = /\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g;
+const HAS_VAR = /\{\{\s*[A-Za-z0-9_]+\s*\}\}/;
+
+/**
+ * Plantillas aprobadas que Pulse sabe llenar. Se omiten (y se nombran) las que tienen
+ * variables en el encabezado de texto, encabezado de ubicación o botones con URL variable.
+ */
+export function parseMetaTemplates(list: MetaTemplate[]) {
+  const rows: WaTemplate[] = [];
+  const skipped: string[] = [];
+  for (const t of list) {
+    if (t.status !== "APPROVED" || !t.name || !t.language) continue;
+    const comps = t.components ?? [];
+    const header = comps.find((c) => c.type === "HEADER");
+    const body = comps.find((c) => c.type === "BODY")?.text ?? "";
+    const buttons = comps.find((c) => c.type === "BUTTONS")?.buttons ?? [];
+    const media = header?.format && ["IMAGE", "VIDEO", "DOCUMENT"].includes(header.format);
+    if (
+      (header && !media && header.format !== "TEXT") ||
+      (header?.format === "TEXT" && HAS_VAR.test(header.text ?? "")) ||
+      buttons.some((b) => b.type === "URL" && /\{\{/.test(b.url ?? ""))
+    ) {
+      skipped.push(t.name);
+      continue;
+    }
+    rows.push({
+      name: t.name,
+      language: t.language,
+      category: t.category ?? "",
+      body,
+      headerFormat: media ? (header!.format as WaTemplate["headerFormat"]) : null,
+      params: [...new Set([...body.matchAll(VARS)].map((m) => m[1]!))],
+    });
+  }
+  return { rows, skipped };
+}
+
+/** Lee de Meta las plantillas de la cuenta de WhatsApp Business (hasta 1,000). */
+export async function fetchMetaTemplates(wabaId: string, token: string) {
+  const all: MetaTemplate[] = [];
+  let url: string | null =
+    `${GRAPH}/${encodeURIComponent(wabaId)}/message_templates?fields=name,language,status,category,components&limit=200`;
+  for (let page = 0; url && page < 5; page++) {
+    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+    const body = (await res.json().catch(() => ({}))) as {
+      data?: MetaTemplate[];
+      paging?: { next?: string };
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(body.error?.message ?? `Meta respondió ${res.status}`);
+    all.push(...(body.data ?? []));
+    url = body.paging?.next?.startsWith(GRAPH) ? body.paging.next : null;
+  }
+  return all;
+}
+
+/**
  * Aviso interno al WhatsApp personal de un asesor, desde el número de la subcuenta. No se
  * guarda en ninguna conversación. Meta sólo entrega texto libre si el asesor escribió a ese
- * número en las últimas 24 h; si no, queda "fallido" (las plantillas llegan en la fase 3).
+ * número en las últimas 24 h; si no, queda "fallido" (los avisos internos todavía no usan plantilla).
  */
 export async function sendInternalWhatsApp(accountId: string, phone: string, text: string) {
   if (digits(phone).length < 10) return "sin_numero" as const;

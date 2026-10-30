@@ -110,3 +110,50 @@ describe("editor de flujos", () => {
     expect(saved.steps[1]).toMatchObject({ type: "notify", to: ["u1"], whatsapp: true });
   });
 });
+
+describe("reglas de WhatsApp en el editor", () => {
+  const templates = [
+    {
+      name: "seguimiento",
+      language: "es_MX",
+      category: "MARKETING",
+      body: "Hola {{1}}, ¿sigues interesado?",
+      headerFormat: null,
+      params: ["1"],
+    },
+  ];
+  const late: Flow = {
+    ...flow,
+    steps: [
+      { id: "w", type: "wait", amount: 2, unit: "day" },
+      { id: "m", type: "message", text: "¿Sigues ahí?", materialId: null },
+    ],
+  };
+
+  it("avisa del mensaje que cae fuera de las 24 h y guarda la plantilla y el horario hábil", async () => {
+    const onSave = vi.fn(async () => true);
+    render(
+      <FlowEditor
+        flow={late}
+        materials={[]}
+        templates={templates}
+        onClose={() => {}}
+        onSave={onSave}
+      />,
+    );
+    expect(screen.getByText(/Un mensaje puede llegar/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText("Plantilla de WhatsApp"), {
+      target: { value: "seguimiento|es_MX" },
+    });
+    fireEvent.change(screen.getByLabelText("Valor de {{1}}"), { target: { value: "{{nombre}}" } });
+    expect(screen.queryByText(/Un mensaje puede llegar/)).toBeNull();
+    fireEvent.click(screen.getByRole("switch", { name: "Solo en horario hábil" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar flujo" }));
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = (onSave.mock.calls[0] as unknown as [Flow])[0];
+    expect(saved.steps[1]).toMatchObject({
+      businessHours: true,
+      template: { name: "seguimiento", language: "es_MX", params: ["{{nombre}}"] },
+    });
+  });
+});

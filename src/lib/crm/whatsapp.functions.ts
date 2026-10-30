@@ -1,7 +1,13 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { checkCredentials, dispatchMessage, planChannelSave } from "./whatsapp.server";
+import {
+  checkCredentials,
+  dispatchMessage,
+  fetchMetaTemplates,
+  parseMetaTemplates,
+  planChannelSave,
+} from "./whatsapp.server";
 
 export type WhatsAppStatus = {
   mode: "conectado" | "desconectado" | "simulacion";
@@ -146,4 +152,60 @@ export const sendAdvisorMessage = createServerFn({ method: "POST" })
       text: data.text,
     });
     return { id: msg.id, at: msg.created_at, status };
+  });
+
+/**
+ * Copia las plantillas aprobadas de la cuenta de WhatsApp Business. Reemplaza las anteriores:
+ * una plantilla que Meta pausó o rechazó deja de ofrecerse en los flujos.
+ */
+export const syncWhatsAppTemplates = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: unknown) => z.object({ accountId: z.string().min(1).max(100) }).parse(d))
+  .handler(async ({ data, context }) => {
+    const supabaseAdmin = await requireWhatsAppAdmin(data.accountId, context.userId);
+    const { data: ch, error } = await supabaseAdmin
+      .from("whatsapp_channels")
+      .select("waba_id, access_token")
+      .eq("account_id", data.accountId)
+      .maybeSingle();
+    if (error) throw new Error("No se pudo leer el canal de WhatsApp");
+    if (!ch?.waba_id || !ch.access_token)
+      return {
+        ok: false,
+        error: "Guarda primero el WABA ID y el Access Token",
+        count: 0,
+        skipped: [],
+      };
+    let list;
+    try {
+      list = await fetchMetaTemplates(ch.waba_id, ch.access_token);
+    } catch (e) {
+      return {
+        ok: false,
+        error: e instanceof Error ? e.message : "Meta no respondió",
+        count: 0,
+        skipped: [],
+      };
+    }
+    const { rows, skipped } = parseMetaTemplates(list);
+    const { error: delError } = await supabaseAdmin
+      .from("whatsapp_templates")
+      .delete()
+      .eq("account_id", data.accountId);
+    if (delError) throw new Error("No se pudieron guardar las plantillas");
+    if (rows.length) {
+      const { error: insError } = await supabaseAdmin.from("whatsapp_templates").insert(
+        rows.map((t) => ({
+          account_id: data.accountId,
+          name: t.name,
+          language: t.language,
+          category: t.category,
+          body: t.body,
+          header_format: t.headerFormat,
+          params: t.params,
+        })),
+      );
+      if (insError) throw new Error("No se pudieron guardar las plantillas");
+    }
+    return { ok: true, error: null as string | null, count: rows.length, skipped };
   });
