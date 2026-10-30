@@ -7,12 +7,20 @@ export type ConditionRule =
   | { kind: "stage"; op: "eq" | "gte"; stage: string }
   | { kind: "field"; field: LeadNumberField; op: "set" | "gte" | "lte"; value: number }
   | { kind: "replied" }
+  | { kind: "advisor_replied" }
   | { kind: "appointment" };
+
+/** A quién avisa el paso «Avisar al equipo»: el asesor asignado, los administradores o un user_id. */
+export type NotifyTarget = "assigned" | "admins" | (string & {});
+export type LeadAction = "add_tag" | "remove_tag" | "set_stage" | "bot_on" | "bot_off";
 export type FlowStep =
   | { id: string; type: "message"; text: string; materialId: string | null }
   | { id: string; type: "wait"; amount: number; unit: WaitUnit }
   | { id: string; type: "wait_appt"; amount: number; unit: WaitUnit }
-  | { id: string; type: "action"; action: "add_tag" | "remove_tag" | "set_stage"; value: string }
+  | { id: string; type: "action"; action: LeadAction; value: string }
+  | { id: string; type: "notify"; to: NotifyTarget[]; text: string; whatsapp: boolean }
+  /** userIds vacío = todo el equipo. fixed usa el primero. */
+  | { id: string; type: "assign"; mode: "fixed" | "round_robin"; userIds: string[] }
   | { id: string; type: "condition"; rule: ConditionRule; yes: FlowStep[]; no: FlowStep[] }
   | { id: string; type: "end" };
 
@@ -123,6 +131,7 @@ export const VARIABLES = [
   "producto",
   "presupuesto",
   "cita",
+  "asesor",
 ] as const;
 
 export function renderText(
@@ -132,6 +141,8 @@ export function renderText(
     account: Account;
     appointment?: Appointment | undefined;
     material?: Material | undefined;
+    /** Nombre del asesor asignado. */
+    advisor?: string | undefined;
   },
 ) {
   const { lead, account, appointment } = ctx;
@@ -150,6 +161,7 @@ export function renderText(
           minute: "2-digit",
         })
       : "tu cita",
+    asesor: ctx.advisor || "un asesor",
   };
   let out = text.replace(/\{\{\s*(\w+)\s*\}\}/g, (m, k: string) => vars[k] ?? m);
   if (ctx.material)
@@ -222,6 +234,7 @@ export function evaluateCondition(
   ctx: {
     lead: Pick<Lead, "tags" | "stage" | LeadNumberField>;
     replied: boolean;
+    advisorReplied?: boolean;
     hasAppointment: boolean;
   },
 ): boolean {
@@ -240,6 +253,8 @@ export function evaluateCondition(
     }
     case "replied":
       return ctx.replied;
+    case "advisor_replied":
+      return ctx.advisorReplied ?? false;
     case "appointment":
       return ctx.hasAppointment;
     default:
@@ -261,6 +276,8 @@ export function conditionLabel(rule: ConditionRule, stageName: (n: number) => st
         : `¿${FIELD_LABEL[rule.field]} ${rule.op === "gte" ? "≥" : "≤"} ${rule.value.toLocaleString("es-MX")}?`;
     case "replied":
       return "¿Respondió desde que entró al flujo?";
+    case "advisor_replied":
+      return "¿Un asesor le escribió desde que entró al flujo?";
     case "appointment":
       return "¿Tiene cita programada?";
     default:
@@ -493,6 +510,50 @@ export const FLOW_TEMPLATES: FlowTemplate[] = [
       },
       { id: sid(), type: "action", action: "add_tag", value: "no-califica" },
     ],
+  },
+  {
+    key: "lead-caliente",
+    name: "Lead caliente: avisar y asignar",
+    description:
+      "Cuando la IA detecta intención de compra: asigna un asesor por turnos, le avisa con resumen, pausa el bot y, si en 10 minutos nadie le escribe, avisa a los administradores.",
+    triggerType: "intent",
+    triggerValue: "",
+    triggerConfig: { intents: ["quiere_comprar"] },
+    allowReentry: false,
+    steps: () => [
+      { id: sid(), type: "assign", mode: "round_robin", userIds: [] },
+      {
+        id: sid(),
+        type: "notify",
+        to: ["assigned"],
+        text: "🔥 {{nombre_completo}} quiere comprar. Escríbele ya.",
+        whatsapp: true,
+      },
+      { id: sid(), type: "action", action: "bot_off", value: "" },
+      {
+        id: sid(),
+        type: "message",
+        text: "¡Excelente {{nombre}}! 🙌 Te comunico con {{asesor}}, que te va a atender personalmente en unos minutos.",
+        materialId: null,
+      },
+      { id: sid(), type: "wait", amount: 10, unit: "min" },
+      {
+        id: sid(),
+        type: "condition",
+        rule: { kind: "advisor_replied" },
+        yes: [],
+        no: [
+          {
+            id: sid(),
+            type: "notify",
+            to: ["admins", "assigned"],
+            text: "⏰ {{nombre_completo}} lleva 10 minutos esperando a {{asesor}} y nadie le ha escrito.",
+            whatsapp: true,
+          },
+        ],
+      },
+    ],
+    stopOnReply: false,
   },
   {
     key: "recordatorio",

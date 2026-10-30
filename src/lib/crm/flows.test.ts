@@ -168,3 +168,30 @@ describe("disparadores de conversación", () => {
     }
   });
 });
+
+describe("plantilla «Lead caliente»", () => {
+  it("se dispara por intención de compra, sin anti-spam ni reingreso y es importable", () => {
+    const t = FLOW_TEMPLATES.find((x) => x.key === "lead-caliente")!;
+    expect(t.triggerConfig).toEqual({ intents: ["quiere_comprar"] });
+    expect(t.stopOnReply).toBe(false);
+    const steps = t.steps([]);
+    expect(steps.map((s) => s.type)).toEqual([
+      "assign",
+      "notify",
+      "action",
+      "message",
+      "wait",
+      "condition",
+    ]);
+    const f = flow({ triggerType: t.triggerType, triggerConfig: t.triggerConfig!, steps });
+    expect(
+      parseFlow(JSON.parse(JSON.stringify(exportFlow(f, () => null))), "a", []).steps,
+    ).toHaveLength(6);
+  });
+  it("{{asesor}} usa el asignado o «un asesor»", () => {
+    expect(renderText("Te atiende {{asesor}}", { lead, account, advisor: "Ana" })).toBe(
+      "Te atiende Ana",
+    );
+    expect(renderText("Te atiende {{asesor}}", { lead, account })).toBe("Te atiende un asesor");
+  });
+});

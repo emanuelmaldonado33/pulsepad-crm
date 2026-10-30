@@ -65,4 +65,48 @@ describe("editor de flujos", () => {
     fireEvent.click(screen.getByRole("switch", { name: "Permitir reingreso" }));
     expect(screen.getByText(/vuelve a empezar cada vez/)).toBeTruthy();
   });
+
+  it("arma un aviso al equipo y una asignación con las personas de la subcuenta", async () => {
+    const onSave = vi.fn(async () => true);
+    const members = [
+      {
+        accountId: "a",
+        userId: "u1",
+        role: "owner" as const,
+        name: "Emanuel",
+        whatsappPhone: "",
+        available: true,
+      },
+      {
+        accountId: "a",
+        userId: "u2",
+        role: "member" as const,
+        name: "Ana",
+        whatsappPhone: "",
+        available: false,
+      },
+    ];
+    render(
+      <FlowEditor
+        flow={flow}
+        materials={[]}
+        members={members}
+        onClose={() => {}}
+        onSave={onSave}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /Asignar asesor/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Ana (no disponible)" }));
+    fireEvent.click(screen.getByRole("button", { name: /Avisar al equipo/ }));
+    const who = screen.getByRole("group", { name: "A quién avisar" });
+    fireEvent.click(within(who).getByRole("button", { name: "Asesor asignado" }));
+    const save = screen.getByRole("button", { name: "Guardar flujo" }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    fireEvent.click(within(who).getByRole("button", { name: "Emanuel" }));
+    fireEvent.click(save);
+    await vi.waitFor(() => expect(onSave).toHaveBeenCalled());
+    const saved = (onSave.mock.calls[0] as unknown as [Flow])[0];
+    expect(saved.steps[0]).toMatchObject({ type: "assign", mode: "round_robin", userIds: ["u2"] });
+    expect(saved.steps[1]).toMatchObject({ type: "notify", to: ["u1"], whatsapp: true });
+  });
 });

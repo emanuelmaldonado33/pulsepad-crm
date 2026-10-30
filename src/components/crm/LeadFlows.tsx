@@ -13,9 +13,13 @@ const stepLabel = (s: FlowStep) =>
         ? `${unitLabel(s.amount, s.unit)} antes de la cita`
         : s.type === "action"
           ? "acción"
-          : s.type === "condition"
-            ? conditionLabel(s.rule, (n) => STAGES[n]?.code ?? `P${n}`)
-            : "terminar";
+          : s.type === "notify"
+            ? "avisar al equipo"
+            : s.type === "assign"
+              ? "asignar asesor"
+              : s.type === "condition"
+                ? conditionLabel(s.rule, (n) => STAGES[n]?.code ?? `P${n}`)
+                : "terminar";
 import { Button } from "@/components/ui/button";
 
 /** Flujo activo del lead + controles para probarlo. */

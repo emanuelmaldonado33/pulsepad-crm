@@ -39,6 +39,7 @@ export function exportFlow(f: Flow, materialName: (id: string | null) => string 
 }
 
 const UNITS: WaitUnit[] = ["min", "hour", "day"];
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const unitOf = (u: unknown): WaitUnit => {
   const s = String(u ?? "").toLowerCase();
   if (UNITS.includes(s as WaitUnit)) return s as WaitUnit;
@@ -150,7 +151,7 @@ export function parseFlow(
   const parseRule = (v: unknown, at: string): ConditionRule => {
     const r = (v ?? {}) as Record<string, unknown>;
     const kind = str(r["kind"], 20);
-    if (kind === "replied" || kind === "appointment") return { kind };
+    if (kind === "replied" || kind === "appointment" || kind === "advisor_replied") return { kind };
     if (kind === "tag") {
       const tag = tagify(r["tag"] ?? r["value"]);
       if (!tag) throw new Error(`La condición ${at} no indica la etiqueta`);
@@ -194,12 +195,42 @@ export function parseFlow(
           if (v == null) throw new Error(`El paso ${at} cambia a una etapa inválida`);
           return { id: sid(), type, action, value: v };
         }
+        if (action === "bot_on" || action === "bot_off")
+          return { id: sid(), type, action, value: "" };
         if (action === "add_tag" || action === "remove_tag") {
           const v = tagify(s["value"]);
           if (!v) throw new Error(`El paso ${at} no indica la etiqueta`);
           return { id: sid(), type, action, value: v };
         }
         throw new Error(`El paso ${at} tiene una acción desconocida`);
+      }
+      if (type === "notify") {
+        const text = str(s["text"], 1000).trim();
+        if (!text) throw new Error(`El aviso del paso ${at} está vacío`);
+        const raw = Array.isArray(s["to"]) ? s["to"] : [];
+        const to = [
+          ...new Set(
+            raw
+              .map((t) => str(t, 40))
+              .filter((t) => t === "assigned" || t === "admins" || UUID.test(t)),
+          ),
+        ];
+        return {
+          id: sid(),
+          type,
+          text,
+          to: to.length ? to : ["assigned"],
+          whatsapp: s["whatsapp"] === true,
+        };
+      }
+      if (type === "assign") {
+        const userIds = [
+          ...new Set((Array.isArray(s["userIds"]) ? s["userIds"] : []).map((u) => str(u, 40))),
+        ].filter((u) => UUID.test(u));
+        const mode = s["mode"] === "fixed" ? "fixed" : "round_robin";
+        if (mode === "fixed" && !userIds.length)
+          throw new Error(`El paso ${at} asigna a una persona fija pero no dice a quién`);
+        return { id: sid(), type, mode, userIds: mode === "fixed" ? userIds.slice(0, 1) : userIds };
       }
       if (type === "condition") {
         if (depth >= MAX_BRANCH_DEPTH)

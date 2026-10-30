@@ -3,9 +3,13 @@ import { fakeSupabase, type FakeQuery } from "@/test/fake-supabase";
 import type { FlowStep } from "./flows";
 
 const dispatchMessage = vi.fn(async (_: unknown) => ({}));
-vi.mock("./whatsapp.server", () => ({ dispatchMessage: (a: unknown) => dispatchMessage(a) }));
+const sendInternalWhatsApp = vi.fn(async (..._: unknown[]) => "enviado");
+vi.mock("./whatsapp.server", () => ({
+  dispatchMessage: (a: unknown) => dispatchMessage(a),
+  sendInternalWhatsApp: (...a: unknown[]) => sendInternalWhatsApp(...a),
+}));
 
-const { runEnrollment } = await import("./flow-runner.server");
+const { runEnrollment, notifyRecipients, notifyBody } = await import("./flow-runner.server");
 
 // Mensaje A → ¿respondió? (sí: etiqueta caliente · no: mensaje B y espera 1 día) → etapa P3.
 const steps: FlowStep[] = [
@@ -141,5 +145,173 @@ describe("runDueForLead", () => {
       .filter((c) => c.table === "flow_enrollments" && c.op === "update")
       .map((c) => c.filters.find((f) => f[1] === "id")?.[2]);
     expect(claims).toEqual(["e-ok"]);
+  });
+});
+
+describe("entrega al asesor", () => {
+  const OWNER = "00000000-0000-0000-0000-000000000001";
+  const ANA = "00000000-0000-0000-0000-000000000002";
+  const LUIS = "00000000-0000-0000-0000-000000000003";
+  const members = [
+    { user_id: OWNER, role: "owner", display_name: "Emanuel", whatsapp_phone: "+52 55 1111 1111" },
+    { user_id: ANA, role: "member", display_name: "Ana", whatsapp_phone: "+52 55 2222 2222" },
+    { user_id: LUIS, role: "member", display_name: "Luis", whatsapp_phone: "" },
+  ];
+
+  function run(
+    steps: FlowStep[],
+    opts: { assignTo?: string | null; advisorReplied?: boolean } = {},
+  ) {
+    const sb = fakeSupabase((q: FakeQuery) => {
+      if (
+        q.table === "flow_enrollments" &&
+        q.op === "update" &&
+        q.filters.some((f) => f[0] === "or")
+      )
+        return {
+          data: {
+            id: "e1",
+            flow_id: "f1",
+            lead_id: "l1",
+            account_id: "acc",
+            current_node: null,
+            current_step: 0,
+          },
+        };
+      if (q.table === "flow_enrollments" && q.op === "select")
+        return {
+          data: { status: "active", replied: false, advisor_replied: opts.advisorReplied ?? false },
+        };
+      if (q.table === "flows") return { data: { id: "f1", account_id: "acc", steps } };
+      if (q.table === "leads" && q.op === "select")
+        return {
+          data: {
+            id: "l1",
+            account_id: "acc",
+            name: "Carla Ruiz",
+            stage: 3,
+            tags: [],
+            phone: "+525500000000",
+            bot_active: true,
+            assigned_to: null,
+            ai_summary: "Busca depa de 2 recámaras.\nPresupuesto 3 M.",
+          },
+        };
+      if (q.table === "accounts") return { data: { id: "acc", name: "Espacio FX" } };
+      if (q.table === "account_memberships") return { data: members };
+      if (q.op === "rpc") return { data: opts.assignTo ?? null };
+      if (q.table === "notifications" && q.op === "insert")
+        return {
+          data: (q.payload as { user_id: string }[]).map((n, i) => ({
+            id: `n${i}`,
+            user_id: n.user_id,
+          })),
+        };
+      if (q.table === "messages" && q.op === "select") return { data: [] };
+      if (q.table === "appointments" || q.table === "materials") return { data: [] };
+      if (q.table === "messages") return { data: { id: "m" } };
+      return {};
+    });
+    return sb;
+  }
+  const of = (sb: ReturnType<typeof run>, table: string, op: string) =>
+    sb.calls.filter((c) => c.table === table && c.op === op);
+
+  beforeEach(() => {
+    dispatchMessage.mockClear();
+    sendInternalWhatsApp.mockClear();
+  });
+
+  it("asigna por turnos, avisa al asignado con resumen y le escribe al lead con su nombre", async () => {
+    const sb = run(
+      [
+        { id: "a", type: "assign", mode: "round_robin", userIds: [] },
+        {
+          id: "n",
+          type: "notify",
+          to: ["assigned"],
+          text: "🔥 {{nombre}} quiere comprar",
+          whatsapp: true,
+        },
+        { id: "m", type: "message", text: "Te atiende {{asesor}}", materialId: null },
+      ],
+      { assignTo: ANA },
+    );
+    await runEnrollment(sb.client as never, "e1");
+    expect(of(sb, "assign_lead", "rpc")[0]!.payload).toEqual({
+      p_lead_id: "l1",
+      p_user_ids: [],
+      p_round_robin: true,
+    });
+    const [notif] = of(sb, "notifications", "insert");
+    const rows = notif!.payload as { user_id: string; body: string; account_id: string }[];
+    expect(rows.map((r) => r.user_id)).toEqual([ANA]);
+    expect(rows[0]!.account_id).toBe("acc");
+    expect(rows[0]!.body).toContain("🔥 Carla quiere comprar");
+    expect(rows[0]!.body).toContain("Busca depa de 2 recámaras.");
+    expect(sendInternalWhatsApp).toHaveBeenCalledWith("acc", "+52 55 2222 2222", rows[0]!.body);
+    expect(of(sb, "notifications", "update")[0]!.payload).toEqual({ wa_status: "enviado" });
+    const sent = of(sb, "messages", "insert").map((c) => (c.payload as { body: string }).body);
+    expect(sent).toEqual(["Te atiende Ana"]);
+    const events = of(sb, "lead_events", "insert").map((c) => (c.payload as { body: string }).body);
+    expect(events).toEqual(["Asignado a Ana por un flujo", "Aviso a Ana"]);
+  });
+
+  it("sin nadie disponible lo deja anotado y el aviso al asignado no llega a nadie", async () => {
+    const sb = run([
+      { id: "a", type: "assign", mode: "round_robin", userIds: [] },
+      { id: "n", type: "notify", to: ["assigned"], text: "x", whatsapp: false },
+    ]);
+    await runEnrollment(sb.client as never, "e1");
+    expect(of(sb, "notifications", "insert")).toHaveLength(0);
+    const events = of(sb, "lead_events", "insert").map((c) => (c.payload as { body: string }).body);
+    expect(events[0]).toMatch(/Nadie del equipo/);
+    expect(events[1]).toMatch(/sin destinatarios/);
+  });
+
+  it("escala a los administradores si ningún asesor escribió", async () => {
+    const steps: FlowStep[] = [
+      {
+        id: "c",
+        type: "condition",
+        rule: { kind: "advisor_replied" },
+        yes: [],
+        no: [{ id: "n", type: "notify", to: ["admins"], text: "Nadie atendió", whatsapp: false }],
+      },
+    ];
+    const nobody = run(steps, { advisorReplied: false });
+    await runEnrollment(nobody.client as never, "e1");
+    const rows = of(nobody, "notifications", "insert")[0]!.payload as { user_id: string }[];
+    expect(rows.map((r) => r.user_id)).toEqual([OWNER]);
+    expect(sendInternalWhatsApp).not.toHaveBeenCalled();
+    const attended = run(steps, { advisorReplied: true });
+    await runEnrollment(attended.client as never, "e1");
+    expect(of(attended, "notifications", "insert")).toHaveLength(0);
+  });
+
+  it("apaga el bot para el lead y lo anota", async () => {
+    const sb = run([{ id: "b", type: "action", action: "bot_off", value: "" }]);
+    await runEnrollment(sb.client as never, "e1");
+    expect(of(sb, "leads", "update")[0]!.payload).toMatchObject({ bot_active: false });
+    expect((of(sb, "lead_events", "insert")[0]!.payload as { body: string }).body).toBe(
+      "Bot apagado por un flujo",
+    );
+  });
+
+  it("destinatarios sin repetir y sólo del equipo", () => {
+    const r = notifyRecipients(["assigned", "admins", OWNER, "ajeno"], members, OWNER);
+    expect(r.map((m) => m.user_id)).toEqual([OWNER]);
+  });
+
+  it("sin resumen de IA usa lo último que escribió el lead", () => {
+    const body = notifyBody(
+      "Atiende a {{nombre}}",
+      { id: "l1", name: "Carla Ruiz", phone: "+52", stage: 2, tags: [] } as never,
+      { name: "FX" } as never,
+      undefined,
+      ["hola", "¿precio?"],
+    );
+    expect(body).toContain("Atiende a Carla");
+    expect(body).toContain("«hola»\n«¿precio?»");
   });
 });

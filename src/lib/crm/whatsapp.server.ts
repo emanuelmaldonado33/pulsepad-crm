@@ -109,6 +109,28 @@ export async function dispatchMessage(opts: {
   }
 }
 
+/**
+ * Aviso interno al WhatsApp personal de un asesor, desde el número de la subcuenta. No se
+ * guarda en ninguna conversación. Meta sólo entrega texto libre si el asesor escribió a ese
+ * número en las últimas 24 h; si no, queda "fallido" (las plantillas llegan en la fase 3).
+ */
+export async function sendInternalWhatsApp(accountId: string, phone: string, text: string) {
+  if (digits(phone).length < 10) return "sin_numero" as const;
+  const ch = await getChannel(accountId);
+  if (!ch) return "simulado" as const;
+  try {
+    await graphSend(ch.phone_number_id, ch.access_token, {
+      to: digits(phone),
+      type: "text",
+      text: { body: text.slice(0, 4096), preview_url: true },
+    });
+    return "enviado" as const;
+  } catch (e) {
+    console.error("internal whatsapp failed", accountId, e instanceof Error ? e.message : e);
+    return "fallido" as const;
+  }
+}
+
 /** Comprueba credenciales leyendo el número en Graph API. */
 export async function checkCredentials(phoneNumberId: string, token: string) {
   const res = await fetch(

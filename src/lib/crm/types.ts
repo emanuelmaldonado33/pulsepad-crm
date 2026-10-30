@@ -24,6 +24,32 @@ export interface Account {
   aiModel: string;
   template: string;
   standardTags: string[];
+  /** Pausar el bot cuando un asesor escribe a mano (por defecto sí). */
+  autoPauseBot?: boolean;
+}
+
+/** Aviso interno para una persona del equipo (notifications). */
+export interface AppNotification {
+  id: string;
+  accountId: string;
+  leadId: string | null;
+  title: string;
+  body: string;
+  waStatus: string | null;
+  readAt: string | null;
+  createdAt: string;
+}
+
+export type MemberRole = "owner" | "admin" | "member";
+
+/** Persona del equipo de una subcuenta (account_memberships). */
+export interface Member {
+  accountId: string;
+  userId: string;
+  role: MemberRole;
+  name: string;
+  whatsappPhone: string;
+  available: boolean;
 }
 
 export type Outcome = "ganado" | "no_califica" | null;
@@ -43,6 +69,10 @@ export interface Lead {
   tags: string[];
   notes: string;
   botActive: boolean;
+  /** Asesor asignado (user_id de account_memberships). */
+  assignedTo?: string | null;
+  /** Resumen de la conversación que deja la IA para el asesor. */
+  aiSummary?: string | null;
   messages: Message[];
   createdAt: string;
 }

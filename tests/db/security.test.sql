@@ -443,4 +443,114 @@ SELECT test_helpers.no_rows('intruso cambia la calificación de un lead ajeno',
   $$UPDATE public.leads SET intent = 'listo_para_cita' WHERE id = 't-lead' RETURNING id$$);
 RESET ROLE;
 
+
+-- ===== Entrega al asesor y avisos (0013) =====
+SET ROLE service_role;
+SELECT test_helpers.eq('el equipo toma su nombre del correo',
+  (SELECT display_name FROM public.account_memberships
+    WHERE account_id = 'espacio-fx' AND user_id = '33333333-3333-3333-3333-333333333333'), 'miembro'::text);
+INSERT INTO public.leads (id, account_id, name, bot_active) VALUES ('h-lead', 'espacio-fx', 'Caliente', true);
+INSERT INTO public.flows (id, account_id, name, stop_on_reply) VALUES ('H-flujo', 'espacio-fx', 'escala', false);
+INSERT INTO public.flow_enrollments (id, flow_id, lead_id, account_id) VALUES ('H-e', 'H-flujo', 'h-lead', 'espacio-fx');
+
+-- Por turnos: primero quien nunca recibió, luego el otro, y se salta a quien no está disponible.
+CREATE TEMP TABLE turnos (n int, u uuid);
+INSERT INTO turnos VALUES (1, public.assign_lead('h-lead', '{}', true));
+INSERT INTO turnos VALUES (2, public.assign_lead('h-lead', '{}', true));
+INSERT INTO turnos VALUES (3, public.assign_lead('h-lead', '{}', true));
+SELECT test_helpers.eq('por turnos reparte entre los dos', (SELECT count(DISTINCT u) FROM turnos WHERE n <= 2), 2::bigint);
+SELECT test_helpers.eq('y vuelve a empezar', (SELECT u FROM turnos WHERE n = 3), (SELECT u FROM turnos WHERE n = 1));
+SELECT test_helpers.eq('queda asignado al último',
+  (SELECT assigned_to FROM public.leads WHERE id = 'h-lead'), (SELECT u FROM turnos WHERE n = 3));
+UPDATE public.account_memberships SET available = false
+  WHERE account_id = 'espacio-fx' AND user_id = '33333333-3333-3333-3333-333333333333';
+SELECT test_helpers.eq('salta a quien no está disponible',
+  public.assign_lead('h-lead', '{}', true), '723bdc1b-0db6-4118-9d97-c8a033df9b9f'::uuid);
+SELECT test_helpers.eq('salta otra vez',
+  public.assign_lead('h-lead', '{}', true), '723bdc1b-0db6-4118-9d97-c8a033df9b9f'::uuid);
+SELECT test_helpers.eq('fijo asigna aunque no esté disponible',
+  public.assign_lead('h-lead', ARRAY['33333333-3333-3333-3333-333333333333']::uuid[], false),
+  '33333333-3333-3333-3333-333333333333'::uuid);
+SELECT test_helpers.eq('por turnos sin nadie disponible no asigna',
+  public.assign_lead('h-lead', ARRAY['33333333-3333-3333-3333-333333333333']::uuid[], true), NULL::uuid);
+SELECT test_helpers.eq('nunca asigna a alguien de otra cuenta',
+  public.assign_lead('h-lead', ARRAY['22222222-2222-2222-2222-222222222222']::uuid[], false), NULL::uuid);
+SELECT test_helpers.denied('asignar directo a alguien de otra cuenta',
+  $$UPDATE public.leads SET assigned_to = '22222222-2222-2222-2222-222222222222' WHERE id = 'h-lead'$$);
+UPDATE public.account_memberships SET available = true
+  WHERE account_id = 'espacio-fx' AND user_id = '33333333-3333-3333-3333-333333333333';
+
+-- El asesor escribe: el bot se pausa, queda en el historial y la condición lo ve.
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('h-lead', 'lead', 'quiero comprar');
+SELECT test_helpers.eq('el lead no cuenta como asesor',
+  (SELECT advisor_replied FROM public.flow_enrollments WHERE id = 'H-e'), false);
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('h-lead', 'asesor', 'te atiendo yo');
+SELECT test_helpers.eq('bot pausado al escribir el asesor',
+  (SELECT bot_active FROM public.leads WHERE id = 'h-lead'), false);
+SELECT test_helpers.eq('queda en el historial',
+  (SELECT body FROM public.lead_events WHERE lead_id = 'h-lead'), 'Bot pausado: un asesor escribió al lead'::text);
+SELECT test_helpers.eq('la inscripción sabe que un asesor respondió',
+  (SELECT advisor_replied FROM public.flow_enrollments WHERE id = 'H-e'), true);
+-- Con la regla apagada no se pausa.
+UPDATE public.accounts SET auto_pause_bot = false WHERE id = 'espacio-fx';
+UPDATE public.leads SET bot_active = true WHERE id = 'h-lead';
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('h-lead', 'asesor', 'otra');
+SELECT test_helpers.eq('regla apagada: el bot sigue',
+  (SELECT bot_active FROM public.leads WHERE id = 'h-lead'), true);
+UPDATE public.accounts SET auto_pause_bot = true WHERE id = 'espacio-fx';
+
+INSERT INTO public.notifications (account_id, user_id, lead_id, title, body) VALUES
+  ('espacio-fx', '33333333-3333-3333-3333-333333333333', 'h-lead', 'Lead caliente', 'para el miembro'),
+  ('espacio-fx', '723bdc1b-0db6-4118-9d97-c8a033df9b9f', 'h-lead', 'Lead caliente', 'para el owner');
+RESET ROLE;
+
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.eq('cada quien ve sólo sus avisos',
+  (SELECT array_agg(body) FROM public.notifications), ARRAY['para el miembro']::text[]);
+SELECT test_helpers.affects('marca su aviso como leído',
+  $$UPDATE public.notifications SET read_at = now()$$, 1);
+SELECT test_helpers.denied('no reescribe el aviso',
+  $$UPDATE public.notifications SET body = 'x'$$);
+SELECT test_helpers.denied('no crea avisos',
+  $$INSERT INTO public.notifications (account_id, user_id, title, body) VALUES ('espacio-fx', '33333333-3333-3333-3333-333333333333', 'x', 'y')$$);
+SELECT test_helpers.affects('edita su WhatsApp y disponibilidad',
+  $$UPDATE public.account_memberships SET whatsapp_phone = '+52 55 1111 2222', available = false
+    WHERE user_id = '33333333-3333-3333-3333-333333333333'$$, 1);
+SELECT test_helpers.no_rows('no edita los datos de otro',
+  $$UPDATE public.account_memberships SET whatsapp_phone = '+52 55 0000 0000'
+    WHERE user_id = '723bdc1b-0db6-4118-9d97-c8a033df9b9f'$$);
+SELECT test_helpers.denied('no se adelanta en los turnos',
+  $$UPDATE public.account_memberships SET last_assigned_at = NULL$$);
+SELECT test_helpers.denied('número con texto',
+  $$UPDATE public.account_memberships SET whatsapp_phone = 'llámame' WHERE user_id = '33333333-3333-3333-3333-333333333333'$$);
+SELECT test_helpers.affects('ve el historial de su cuenta',
+  $$SELECT 1 FROM public.lead_events WHERE lead_id = 'h-lead'$$, 1);
+SELECT test_helpers.denied('no escribe en el historial',
+  $$INSERT INTO public.lead_events (account_id, lead_id, kind, body) VALUES ('espacio-fx', 'h-lead', 'x', 'y')$$);
+SELECT test_helpers.denied('no asigna por RPC',
+  $$SELECT public.assign_lead('h-lead', '{}', true)$$);
+SELECT test_helpers.affects('asigna a un compañero desde la ficha',
+  $$UPDATE public.leads SET assigned_to = '723bdc1b-0db6-4118-9d97-c8a033df9b9f' WHERE id = 'h-lead'$$, 1);
+SELECT test_helpers.no_rows('member no cambia la regla de pausa',
+  $$UPDATE public.accounts SET auto_pause_bot = false WHERE id = 'espacio-fx'$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.eq('intruso: avisos', (SELECT count(*) FROM public.notifications), 0::bigint);
+SELECT test_helpers.eq('intruso: historial ajeno', (SELECT count(*) FROM public.lead_events WHERE lead_id = 'h-lead'), 0::bigint);
+SELECT test_helpers.eq('su propia cuenta sí pausa el bot y lo registra', (SELECT count(*) FROM public.lead_events WHERE lead_id = 'L-mia'), 1::bigint);
+SELECT test_helpers.no_rows('intruso no marca avisos ajenos',
+  $$UPDATE public.notifications SET read_at = now()$$);
+SELECT test_helpers.no_rows('intruso no cambia la disponibilidad ajena',
+  $$UPDATE public.account_memberships SET available = false WHERE account_id = 'espacio-fx'$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user(NULL);
+SET ROLE anon;
+SELECT test_helpers.denied('anon lee avisos', $$SELECT * FROM public.notifications$$);
+SELECT test_helpers.denied('anon lee historial', $$SELECT * FROM public.lead_events$$);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'
