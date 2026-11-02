@@ -47,10 +47,21 @@ async function graphSend(phoneNumberId: string, token: string, payload: Record<s
   });
   const body = (await res.json().catch(() => ({}))) as {
     messages?: { id: string }[];
-    error?: { message?: string };
+    error?: { message?: string; code?: number };
   };
-  if (!res.ok) throw new Error(body.error?.message ?? `Meta respondió ${res.status}`);
+  if (!res.ok)
+    throw new GraphError(body.error?.message ?? `Meta respondió ${res.status}`, body.error?.code);
   return body.messages?.[0]?.id ?? null;
+}
+
+/** Error de la API de WhatsApp con su código (p. ej. 131048 = frenado por spam). */
+export class GraphError extends Error {
+  constructor(
+    message: string,
+    readonly code?: number,
+  ) {
+    super(message);
+  }
 }
 
 /** Canal real para escribirle a este lead; null = simulación (sin canal o lead del simulador). */
@@ -185,7 +196,7 @@ export async function dispatchTemplate(opts: {
   const ch = await sendingChannel(opts.accountId, opts.source, opts.phone);
   if (!ch) {
     await sb.from("messages").update({ wa_status: "simulado" }).eq("id", opts.messageId);
-    return { status: "simulado" as const, error: null };
+    return { status: "simulado" as const, error: null, waId: null };
   }
   try {
     const waId = await graphSend(ch.phone_number_id, ch.access_token, {
@@ -196,12 +207,16 @@ export async function dispatchTemplate(opts: {
       .from("messages")
       .update({ wa_status: "enviado", wa_message_id: waId })
       .eq("id", opts.messageId);
-    return { status: "enviado" as const, error: null };
+    return { status: "enviado" as const, error: null, waId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("whatsapp template failed", opts.accountId, msg);
     await sb.from("messages").update({ wa_status: "fallido" }).eq("id", opts.messageId);
-    return { status: "fallido" as const, error: msg };
+    return {
+      status: "fallido" as const,
+      error: msg,
+      code: e instanceof GraphError ? e.code : undefined,
+    };
   }
 }
 
@@ -353,4 +368,29 @@ export async function planChannelSave(
     info = `${r.name} ${r.phone}`.trim();
   }
   return { ok: true, token, appSecret, info };
+}
+
+/** Calidad y límite diario del número según Meta. */
+export type PhoneHealth = { quality: string | null; limit: string | null };
+
+/**
+ * Lee la calidad (GREEN, YELLOW, RED) y el límite de conversaciones nuevas en 24 h del número.
+ * Si Meta ya no acepta el campo del límite, se pide sólo la calidad.
+ */
+export async function fetchPhoneHealth(phoneNumberId: string, token: string): Promise<PhoneHealth> {
+  const get = async (fields: string) => {
+    const res = await fetch(
+      `${GRAPH}/${encodeURIComponent(phoneNumberId)}?fields=${encodeURIComponent(fields)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const body = (await res.json().catch(() => ({}))) as {
+      quality_rating?: string;
+      messaging_limit_tier?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(body.error?.message ?? `Meta respondió ${res.status}`);
+    return body;
+  };
+  const body = await get("quality_rating,messaging_limit_tier").catch(() => get("quality_rating"));
+  return { quality: body.quality_rating ?? null, limit: body.messaging_limit_tier ?? null };
 }

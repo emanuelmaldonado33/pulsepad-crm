@@ -433,7 +433,7 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
 }
 
 /** Cuentas con propietario. Una cuenta sin propietario no envía seguimientos: nadie podría ver esas conversaciones. */
-async function ownedAccounts(sb: Sb, accountIds: string[]) {
+export async function ownedAccounts(sb: Sb, accountIds: string[]) {
   const ids = [...new Set(accountIds)];
   const { data: owners } = ids.length
     ? await sb

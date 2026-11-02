@@ -118,6 +118,154 @@ export type Database = {
         }
         Relationships: []
       }
+      broadcast_recipients: {
+        Row: {
+          account_id: string
+          broadcast_id: string
+          claimed_at: string | null
+          created_at: string
+          delivered_at: string | null
+          error: string | null
+          id: string
+          lead_id: string
+          message_id: string | null
+          read_at: string | null
+          replied_at: string | null
+          sent_at: string | null
+          status: string
+          wa_message_id: string | null
+        }
+        Insert: {
+          account_id: string
+          broadcast_id: string
+          claimed_at?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          error?: string | null
+          id?: string
+          lead_id: string
+          message_id?: string | null
+          read_at?: string | null
+          replied_at?: string | null
+          sent_at?: string | null
+          status?: string
+          wa_message_id?: string | null
+        }
+        Update: {
+          account_id?: string
+          broadcast_id?: string
+          claimed_at?: string | null
+          created_at?: string
+          delivered_at?: string | null
+          error?: string | null
+          id?: string
+          lead_id?: string
+          message_id?: string | null
+          read_at?: string | null
+          replied_at?: string | null
+          sent_at?: string | null
+          status?: string
+          wa_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcast_recipients_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "broadcast_recipients_broadcast_id_fkey"
+            columns: ["broadcast_id"]
+            isOneToOne: false
+            referencedRelation: "broadcasts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "broadcast_recipients_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "broadcast_recipients_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      broadcasts: {
+        Row: {
+          account_id: string
+          created_at: string
+          created_by: string | null
+          daily_cap: number
+          finished_at: string | null
+          id: string
+          locked_until: string | null
+          material: Json | null
+          name: string
+          params: string[]
+          pause_reason: string | null
+          segment: Json
+          starts_at: string
+          status: string
+          template_category: string
+          template_language: string
+          template_name: string
+        }
+        Insert: {
+          account_id: string
+          created_at?: string
+          created_by?: string | null
+          daily_cap?: number
+          finished_at?: string | null
+          id?: string
+          locked_until?: string | null
+          material?: Json | null
+          name: string
+          params?: string[]
+          pause_reason?: string | null
+          segment?: Json
+          starts_at?: string
+          status?: string
+          template_category?: string
+          template_language: string
+          template_name: string
+        }
+        Update: {
+          account_id?: string
+          created_at?: string
+          created_by?: string | null
+          daily_cap?: number
+          finished_at?: string | null
+          id?: string
+          locked_until?: string | null
+          material?: Json | null
+          name?: string
+          params?: string[]
+          pause_reason?: string | null
+          segment?: Json
+          starts_at?: string
+          status?: string
+          template_category?: string
+          template_language?: string
+          template_name?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "broadcasts_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_usage: {
         Row: {
           account_id: string
@@ -653,7 +801,11 @@ export type Database = {
           enabled: boolean
           last_checked_at: string | null
           last_error: string | null
+          messaging_limit: string | null
           phone_number_id: string
+          quality_checked_at: string | null
+          quality_event: string | null
+          quality_rating: string | null
           updated_at: string
           verify_token: string
           waba_id: string
@@ -665,6 +817,10 @@ export type Database = {
           enabled?: boolean
           last_checked_at?: string | null
           last_error?: string | null
+          messaging_limit?: string | null
+          quality_checked_at?: string | null
+          quality_event?: string | null
+          quality_rating?: string | null
           phone_number_id?: string
           updated_at?: string
           verify_token?: string
@@ -677,6 +833,10 @@ export type Database = {
           enabled?: boolean
           last_checked_at?: string | null
           last_error?: string | null
+          messaging_limit?: string | null
+          quality_checked_at?: string | null
+          quality_event?: string | null
+          quality_rating?: string | null
           phone_number_id?: string
           updated_at?: string
           verify_token?: string
@@ -738,6 +898,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      apply_wa_status: {
+        Args: { p_at: string; p_error?: string; p_status: string; p_wa_id: string }
+        Returns: undefined
+      }
       assign_lead: {
         Args: {
           p_lead_id: string
@@ -745,6 +909,24 @@ export type Database = {
           p_user_ids: string[]
         }
         Returns: string
+      }
+      broadcast_stats: {
+        Args: { p_account_id: string }
+        Returns: {
+          broadcast_id: string
+          entregados: number
+          enviados: number
+          fallidos: number
+          leidos: number
+          omitidos: number
+          pendientes: number
+          respondieron: number
+          total: number
+        }[]
+      }
+      claim_broadcast_batch: {
+        Args: { p_broadcast: string; p_limit: number }
+        Returns: Database["public"]["Tables"]["broadcast_recipients"]["Row"][]
       }
       claim_inbound_message: {
         Args: {

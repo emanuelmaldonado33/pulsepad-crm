@@ -683,4 +683,67 @@ SET ROLE anon;
 SELECT test_helpers.denied('anon lee QR', $$SELECT * FROM public.qr_sources$$);
 RESET ROLE;
 
+
+-- ===== Difusiones (0022) =====
+SET ROLE service_role;
+INSERT INTO public.leads (id, account_id, name, phone) VALUES ('bc-mia', 'mia', 'Z', '+520000000009');
+INSERT INTO public.broadcasts (id, account_id, name, template_name, template_language)
+  VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'espacio-fx', 'Preventa', 'promo', 'es_MX');
+SELECT test_helpers.affects('el servidor congela la lista',
+  $$INSERT INTO public.broadcast_recipients (broadcast_id, account_id, lead_id)
+    VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'espacio-fx', 'qr-lead')$$, 1);
+SELECT test_helpers.denied('no mete leads de otra subcuenta',
+  $$INSERT INTO public.broadcast_recipients (broadcast_id, account_id, lead_id)
+    VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'espacio-fx', 'bc-mia')$$);
+SELECT test_helpers.denied('un lead no se repite en la difusión',
+  $$INSERT INTO public.broadcast_recipients (broadcast_id, account_id, lead_id)
+    VALUES ('aaaaaaaa-0000-0000-0000-000000000001', 'espacio-fx', 'qr-lead')$$);
+SELECT test_helpers.eq('reserva el lote',
+  (SELECT count(*) FROM public.claim_broadcast_batch('aaaaaaaa-0000-0000-0000-000000000001', 10)), 1::bigint);
+SELECT test_helpers.eq('no reserva dos veces',
+  (SELECT count(*) FROM public.claim_broadcast_batch('aaaaaaaa-0000-0000-0000-000000000001', 10)), 0::bigint);
+INSERT INTO public.messages (lead_id, sender, body, wa_message_id, wa_status)
+  VALUES ('qr-lead', 'bot', 'Hola', 'wamid.BC1', 'enviado');
+UPDATE public.broadcast_recipients SET status = 'enviado', wa_message_id = 'wamid.BC1',
+  sent_at = now() - interval '1 hour' WHERE lead_id = 'qr-lead';
+SELECT public.apply_wa_status('wamid.BC1', 'read', now() - interval '30 minutes');
+SELECT public.apply_wa_status('wamid.BC1', 'delivered', now() - interval '50 minutes');
+SELECT test_helpers.eq('leído no regresa a entregado',
+  (SELECT status FROM public.broadcast_recipients WHERE lead_id = 'qr-lead'), 'leido'::text);
+SELECT test_helpers.eq('el chat también muestra leído',
+  (SELECT wa_status FROM public.messages WHERE wa_message_id = 'wamid.BC1'), 'leido'::text);
+SELECT test_helpers.eq('leído cuenta como entregado',
+  (SELECT delivered_at IS NOT NULL FROM public.broadcast_recipients WHERE lead_id = 'qr-lead'), true);
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('qr-lead', 'lead', 'Me interesa');
+SELECT test_helpers.eq('la respuesta del lead se anota',
+  (SELECT replied_at IS NOT NULL FROM public.broadcast_recipients WHERE lead_id = 'qr-lead'), true);
+RESET ROLE;
+
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
+SELECT test_helpers.affects('el equipo ve sus difusiones', $$SELECT 1 FROM public.broadcasts$$, 1);
+SELECT test_helpers.eq('reporte de la difusión',
+  (SELECT respondieron FROM public.broadcast_stats('espacio-fx')), 1::bigint);
+SELECT test_helpers.denied('el navegador no crea difusiones',
+  $$INSERT INTO public.broadcasts (account_id, name, template_name, template_language)
+    VALUES ('espacio-fx', 'X', 'promo', 'es_MX')$$);
+SELECT test_helpers.denied('el navegador no cambia estados',
+  $$UPDATE public.broadcast_recipients SET status = 'leido'$$);
+SELECT test_helpers.denied('el navegador no reserva lotes',
+  $$SELECT public.claim_broadcast_batch('aaaaaaaa-0000-0000-0000-000000000001', 10)$$);
+SELECT test_helpers.denied('el navegador no marca entregas',
+  $$SELECT public.apply_wa_status('wamid.BC1', 'read', now())$$);
+RESET ROLE;
+
+SELECT test_helpers.as_user('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+SELECT test_helpers.eq('intruso: difusiones ajenas', (SELECT count(*) FROM public.broadcasts), 0::bigint);
+SELECT test_helpers.eq('intruso: reporte ajeno',
+  (SELECT count(*) FROM public.broadcast_stats('espacio-fx')), 0::bigint);
+RESET ROLE;
+
+SET ROLE anon;
+SELECT test_helpers.denied('anon lee difusiones', $$SELECT * FROM public.broadcasts$$);
+RESET ROLE;
+
 \echo 'Todas las pruebas de seguridad de la base pasaron'
