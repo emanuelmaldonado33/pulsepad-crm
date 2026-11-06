@@ -635,6 +635,32 @@ SET ROLE anon;
 SELECT test_helpers.denied('anon lee plantillas', $$SELECT * FROM public.whatsapp_templates$$);
 RESET ROLE;
 
+-- ===== Coexistencia (0019): el historial de la app no dispara nada; el celular sí pausa =====
+INSERT INTO public.flows (id, account_id, name, active, trigger_type) VALUES
+  ('C-new', 'espacio-fx', 'nuevo', true, 'new_lead'),
+  ('C-reply', 'espacio-fx', 'responde', true, 'reply');
+INSERT INTO public.leads (id, account_id, name, bot_active, imported)
+  VALUES ('c-imp', 'espacio-fx', 'De la app', true, true);
+INSERT INTO public.leads (id, account_id, name) VALUES ('c-new', 'espacio-fx', 'Nuevo');
+SELECT test_helpers.eq('un lead importado no entra a «Lead nuevo»',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'c-imp'), 0::bigint);
+SELECT test_helpers.eq('un lead nuevo de verdad sí',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'c-new' AND flow_id = 'C-new'), 1::bigint);
+INSERT INTO public.messages (lead_id, sender, body, imported, created_at) VALUES
+  ('c-imp', 'lead', 'hola, ¿precio?', true, now() - interval '30 days'),
+  ('c-imp', 'asesor', 'te paso info', true, now() - interval '30 days');
+SELECT test_helpers.eq('el historial no pausa el bot',
+  (SELECT bot_active FROM public.leads WHERE id = 'c-imp'), true);
+SELECT test_helpers.eq('el historial no inscribe «Respondió»',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'c-imp'), 0::bigint);
+INSERT INTO public.messages (lead_id, sender, body) VALUES ('c-imp', 'lead', 'sigo interesado');
+SELECT test_helpers.eq('un mensaje nuevo del lead importado sí inscribe',
+  (SELECT count(*) FROM public.flow_enrollments WHERE lead_id = 'c-imp' AND flow_id = 'C-reply'), 1::bigint);
+INSERT INTO public.messages (lead_id, sender, body, wa_message_id)
+  VALUES ('c-imp', 'asesor', 'ya te marco', 'wamid.echo');
+SELECT test_helpers.eq('lo que escribe desde el celular pausa el bot',
+  (SELECT bot_active FROM public.leads WHERE id = 'c-imp'), false);
+
 -- ===== QR por lona (0020) =====
 SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
 SET ROLE authenticated;

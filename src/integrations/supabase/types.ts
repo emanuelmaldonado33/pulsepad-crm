@@ -389,6 +389,7 @@ export type Database = {
           ctwa_clid: string | null
           down_payment: number | null
           id: string
+          imported: boolean
           intent: string | null
           name: string
           notes: string
@@ -414,6 +415,7 @@ export type Database = {
           ctwa_clid?: string | null
           down_payment?: number | null
           id?: string
+          imported?: boolean
           intent?: string | null
           name: string
           notes?: string
@@ -439,6 +441,7 @@ export type Database = {
           ctwa_clid?: string | null
           down_payment?: number | null
           id?: string
+          imported?: boolean
           intent?: string | null
           name?: string
           notes?: string
@@ -511,6 +514,7 @@ export type Database = {
           body: string
           created_at: string
           id: string
+          imported: boolean
           lead_id: string
           sender: string
           wa_message_id: string | null
@@ -526,6 +530,7 @@ export type Database = {
           body: string
           created_at?: string
           id?: string
+          imported?: boolean
           lead_id: string
           sender: string
           wa_message_id?: string | null
@@ -541,6 +546,7 @@ export type Database = {
           body?: string
           created_at?: string
           id?: string
+          imported?: boolean
           lead_id?: string
           sender?: string
           wa_message_id?: string | null
@@ -650,10 +656,17 @@ export type Database = {
           access_token: string
           account_id: string
           app_secret: string
+          coexistence: boolean
+          display_phone_number: string
           enabled: boolean
+          history_progress: number | null
+          history_status: string | null
           last_checked_at: string | null
           last_error: string | null
+          onboarded_at: string | null
+          onboarding: string
           phone_number_id: string
+          two_step_pin: string
           updated_at: string
           verify_token: string
           waba_id: string
@@ -662,10 +675,17 @@ export type Database = {
           access_token?: string
           account_id: string
           app_secret?: string
+          coexistence?: boolean
+          display_phone_number?: string
           enabled?: boolean
+          history_progress?: number | null
+          history_status?: string | null
           last_checked_at?: string | null
           last_error?: string | null
+          onboarded_at?: string | null
+          onboarding?: string
           phone_number_id?: string
+          two_step_pin?: string
           updated_at?: string
           verify_token?: string
           waba_id?: string
@@ -674,10 +694,17 @@ export type Database = {
           access_token?: string
           account_id?: string
           app_secret?: string
+          coexistence?: boolean
+          display_phone_number?: string
           enabled?: boolean
+          history_progress?: number | null
+          history_status?: string | null
           last_checked_at?: string | null
           last_error?: string | null
+          onboarded_at?: string | null
+          onboarding?: string
           phone_number_id?: string
+          two_step_pin?: string
           updated_at?: string
           verify_token?: string
           waba_id?: string
