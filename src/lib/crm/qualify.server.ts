@@ -5,6 +5,7 @@ import { leadPatch, toLead, toMessage } from "./db";
 import { MESSAGE_INTENTS } from "./flows";
 import type { Lead } from "./types";
 import { dispatchMessage } from "./whatsapp.server";
+import { bookForLead, handleVitruvioReply, vitruvioConnection } from "./vitruvio.server";
 
 const money = (n: number) => "$" + n.toLocaleString("es-MX");
 
@@ -58,6 +59,40 @@ export async function qualifyLead(
     };
   }
 
+  // Subcuenta conectada a Vitruvio: Confirmar, Reagendar, Cancelar o el número de un horario ofrecido
+  // se resuelven contra la agenda real del consultorio, sin pasar por la IA.
+  const vitruvioReply = await handleVitruvioReply(acc.id, lead, text).catch((e: unknown) => {
+    console.error("vitruvio reply failed", e instanceof Error ? e.message : e);
+    return null;
+  });
+  if (vitruvioReply) {
+    events.push({
+      kind: "cita",
+      text: "Respuesta sobre la cita resuelta con la agenda de Vitruvio",
+    });
+    const { data: bm } = await sb
+      .from("messages")
+      .insert({ lead_id: lead.id, sender: "bot", body: vitruvioReply })
+      .select("id")
+      .single();
+    if (bm)
+      await dispatchMessage({
+        accountId: acc.id,
+        phone: lead.phone,
+        source: lead.source,
+        messageId: bm.id,
+        text: vitruvioReply,
+      });
+    return {
+      reply: vitruvioReply as string | null,
+      events,
+      summary: null as string | null,
+      tokens: 0,
+      contextUntil,
+    };
+  }
+  const vitruvio = lead.source !== "Simulador" && vitruvioConnection(acc.id) !== null;
+
   // Sólo se comparten enlaces de la biblioteca de la cuenta; nunca uno inventado.
   const { data: library } = await sb
     .from("materials")
@@ -78,7 +113,7 @@ ETAPAS DEL PIPELINE: P0 Nuevo, P1 Contactado, P2 En calificación, P3 Material/V
 ${materialRule}
 En message_intent clasifica sólo el último mensaje del prospecto: quiere_comprar (quiere apartar, comprar o pagar), pide_precio (pregunta precio, costo o cotización), pide_cita (pide llamada, visita o cita), objecion (duda o freno: precio alto, desconfianza, "lo voy a pensar"), no_interesado, quiere_humano (pide hablar con una persona), pide_baja (pide que ya no le escriban o no recibir más mensajes; no basta con que no le interese) u otro.
 Si un mensaje del prospecto empieza con "🎤 (nota de voz)" es la transcripción automática de un audio que mandó: respóndelo como si lo hubiera escrito. Si dice "🖼️ (imagen: …)" es la descripción automática de una foto que mandó, seguida de su texto si escribió alguno; úsala como dato. Si el audio o la imagen no se pudo leer, pídele amablemente que lo escriba.
-Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y confirma la cita para mañana a las 11:00.
+${vitruvio ? "Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true. No prometas fecha ni hora: el sistema agenda en la agenda real del consultorio y le confirma el horario." : "Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y confirma la cita para mañana a las 11:00."}
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
 Extrae datos de TODO el historial, no sólo del último mensaje. Los montos deben ser números en pesos (ej. "1.2 millones" = 1200000; "20% de enganche" sobre 1,000,000 = 200000).
@@ -203,7 +238,35 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
         text: `Intención del mensaje: ${MESSAGE_INTENTS[o.message_intent].toLowerCase()}`,
       });
   }
-  if (booked) {
+  // Con Vitruvio la cita se agenda en el primer horario libre real (si se ocupó, se prueban las alternativas)
+  // y la respuesta al paciente dice el horario verdadero o le ofrece opciones.
+  let vitruvioBooking: Awaited<ReturnType<typeof bookForLead>> = null;
+  if (booked && vitruvio) {
+    vitruvioBooking = await bookForLead(
+      acc.id,
+      lead,
+      o.summary?.trim() || "Cita agendada por WhatsApp",
+    ).catch((e: unknown) => {
+      console.error("vitruvio booking failed", e instanceof Error ? e.message : e);
+      return {
+        reply: "Con gusto te agendo. En un momento el consultorio te confirma el horario.",
+        booked: null,
+      };
+    });
+    if (vitruvioBooking?.booked) {
+      await sb.from("appointments").insert({
+        account_id: acc.id,
+        lead_id: lead.id,
+        at: vitruvioBooking.booked.at,
+        kind: "Visita",
+      });
+      events.push({ kind: "cita", text: "Cita agendada en Vitruvio" });
+    } else
+      events.push({
+        kind: "cita",
+        text: "Sin horario confirmado en Vitruvio: se ofrecieron opciones",
+      });
+  } else if (booked) {
     const at = new Date(Date.now() + 24 * 3600_000);
     at.setUTCHours(17, 0, 0, 0); // 11:00 CDMX
     await sb
@@ -214,7 +277,8 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
   // Pidió no recibir mensajes: la base lo da de baja (0014) y no se le contesta.
   const optOut = o.message_intent === "pide_baja";
   if (optOut) events.push({ kind: "bot", text: "Pidió no recibir mensajes: dado de baja" });
-  const reply = optOut ? null : o.reply.trim() || null;
+  // Con Vitruvio la respuesta lleva el horario real (o las opciones), no lo que haya dicho la IA sobre la cita.
+  const reply = optOut ? null : vitruvioBooking ? vitruvioBooking.reply : o.reply.trim() || null;
   if (reply) {
     const { data: bm } = await sb
       .from("messages")
