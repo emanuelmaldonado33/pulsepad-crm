@@ -209,3 +209,39 @@ describe("resumen para el asesor", () => {
     expect(upd.payload).toMatchObject({ ai_summary: "Busca depa.\nPresupuesto 3 M." });
   });
 });
+
+describe("costo y control de la IA", () => {
+  const withTokens = (tokens: number) =>
+    fakeSupabase((q: FakeQuery): FakeResult | undefined => {
+      if (q.op === "rpc" && q.table === "ai_tokens_since") return { data: tokens };
+      if (q.table === "materials") return { data: [] };
+      if (q.table === "leads" && q.op === "select") return { data: leadRow };
+      if (q.table === "accounts")
+        return { data: { ...accountRow, ai_model: "anthropic/claude-x-carisimo" } };
+      if (q.table === "messages" && q.op === "select") return { data: [] };
+      if (q.table === "messages" && q.op === "update") return { data: { id: "in" } };
+      if (q.table === "messages" && q.op === "insert") return { data: { id: "reply" } };
+      return {};
+    });
+
+  it("un modelo que no está en la lista se cambia por el económico", async () => {
+    await qualifyLead(withTokens(0).client as never, "L1", "hola", { inboundMessageId: "in" });
+    expect(runQualifier.mock.calls[0]![0].model).toBe("openai/gpt-6-luna");
+  });
+
+  it("al llegar al tope diario no llama a la IA", async () => {
+    await expect(
+      qualifyLead(withTokens(5_000_000).client as never, "L1", "hola", { inboundMessageId: "in" }),
+    ).rejects.toThrow(/tope diario/);
+    expect(runQualifier).not.toHaveBeenCalled();
+  });
+
+  it("si un flujo contesta, el bot califica pero no manda respuesta", async () => {
+    const r = await qualifyLead(withTokens(0).client as never, "L1", "precio", {
+      inboundMessageId: "in",
+      suppressReply: true,
+    });
+    expect(r.reply).toBeNull();
+    expect(dispatchMessage).not.toHaveBeenCalled();
+  });
+});

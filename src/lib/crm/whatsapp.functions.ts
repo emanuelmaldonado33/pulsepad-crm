@@ -7,7 +7,9 @@ import {
   fetchMetaTemplates,
   parseMetaTemplates,
   planChannelSave,
+  sendingChannel,
 } from "./whatsapp.server";
+import { windowOpen } from "./flows";
 
 export type WhatsAppStatus = {
   mode: "conectado" | "desconectado" | "simulacion";
@@ -138,6 +140,22 @@ export const sendAdvisorMessage = createServerFn({ method: "POST" })
       .eq("id", data.leadId)
       .single();
     if (leadError || !lead) throw new Error("Lead no encontrado o sin acceso");
+    // Con canal real, Meta rechaza texto libre si el cliente no escribió en 24 h: se avisa antes
+    // de guardar, en lugar de dejar un mensaje "fallido" sin explicación.
+    if (await sendingChannel(lead.account_id, lead.source, lead.phone)) {
+      const { data: last } = await sb
+        .from("messages")
+        .select("created_at")
+        .eq("lead_id", lead.id)
+        .eq("sender", "lead")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (!windowOpen(last?.created_at))
+        throw new Error(
+          "Pasaron más de 24 horas desde el último mensaje del cliente. WhatsApp sólo deja escribirle con una plantilla aprobada: usa un flujo con plantilla.",
+        );
+    }
     const { data: msg, error } = await sb
       .from("messages")
       .insert({ lead_id: lead.id, sender: "asesor", body: data.text })
