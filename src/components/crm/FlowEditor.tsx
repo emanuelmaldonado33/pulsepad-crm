@@ -16,9 +16,11 @@ import {
   UserCheck,
   FileCheck2,
   AlarmClock,
+  Megaphone,
 } from "lucide-react";
 import { STAGES, type Member } from "@/lib/crm/types";
 import { MAX_BRANCH_DEPTH } from "@/lib/crm/flow-io";
+import { META_EVENTS, META_EVENT_NAMES, type MetaEventName } from "@/lib/crm/meta";
 import {
   CONVERSATION_TRIGGERS,
   FIELD_LABEL,
@@ -69,6 +71,7 @@ const NEW_STEP: Record<FlowStep["type"], () => FlowStep> = {
     whatsapp: true,
   }),
   assign: () => ({ id: sid(), type: "assign", mode: "round_robin", userIds: [] }),
+  meta_event: () => ({ id: sid(), type: "meta_event", event: "QualifiedLead", value: null }),
   condition: () => ({
     id: sid(),
     type: "condition",
@@ -188,6 +191,7 @@ const ICON = {
   action: Zap,
   notify: BellRing,
   assign: UserCheck,
+  meta_event: Megaphone,
   condition: GitBranch,
   end: CircleStop,
 };
@@ -198,6 +202,7 @@ const TITLE = {
   action: "Acción",
   notify: "Avisar al equipo",
   assign: "Asignar asesor",
+  meta_event: "Enviar evento a Meta",
   condition: "Condición sí / no",
   end: "Terminar flujo",
 };
@@ -595,6 +600,57 @@ function AssignEditor({
   );
 }
 
+/** Paso «Enviar evento a Meta»: qué pasó con el cliente y, si es venta, el monto. */
+function MetaEventEditor({
+  st,
+  set,
+}: {
+  st: Extract<FlowStep, { type: "meta_event" }>;
+  set: (st: FlowStep) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <label className="flex flex-wrap items-center gap-2 text-sm">
+        Avisar a Meta que el cliente
+        <select
+          className={sel}
+          aria-label="Evento de Meta"
+          value={st.event}
+          onChange={(e) => set({ ...st, event: e.target.value as MetaEventName })}
+        >
+          {META_EVENT_NAMES.map((ev) => (
+            <option key={ev} value={ev}>
+              {META_EVENTS[ev]}
+            </option>
+          ))}
+        </select>
+      </label>
+      {st.event === "Purchase" && (
+        <label className="flex flex-wrap items-center gap-2 text-sm">
+          Monto de la venta $
+          <Input
+            type="number"
+            min={0}
+            className="w-36"
+            aria-label="Monto de la venta"
+            value={st.value ?? ""}
+            placeholder="presupuesto"
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              set({ ...st, value: e.target.value && n > 0 ? Math.round(n) : null });
+            }}
+          />
+          <span className="text-xs text-muted-foreground">Vacío = usa el presupuesto del lead</span>
+        </label>
+      )}
+      <p className="text-xs text-muted-foreground">
+        Sólo sirve con clientes que llegaron por un anuncio de WhatsApp. Meta lo recibe una sola vez
+        por cliente y lo usa para mostrar tus anuncios a personas parecidas.
+      </p>
+    </div>
+  );
+}
+
 function StepCard({
   st,
   index,
@@ -772,6 +828,7 @@ function StepCard({
       )}
       {st.type === "notify" && <NotifyEditor st={st} set={set} />}
       {st.type === "assign" && <AssignEditor st={st} set={set} />}
+      {st.type === "meta_event" && <MetaEventEditor st={st} set={set} />}
       {st.type === "condition" && (
         <div className="space-y-3">
           <RuleEditor rule={st.rule} onChange={(rule) => set({ ...st, rule })} />

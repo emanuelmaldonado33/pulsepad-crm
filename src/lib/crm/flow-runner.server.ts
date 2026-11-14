@@ -25,6 +25,7 @@ import {
   type NotifyTarget,
   type WaTemplate,
 } from "./flows";
+import { sendFlowMetaEvent } from "./meta.server";
 import type { Account, Lead } from "./types";
 
 type Sb = SupabaseClient<Database>;
@@ -125,7 +126,7 @@ export async function sendStep(
       .select("id")
       .single();
     if (error || !msg) throw error ?? new Error("insert failed");
-    await dispatchMessage({
+    const status = await dispatchMessage({
       accountId: account.id,
       phone: lead.phone,
       source: lead.source,
@@ -133,7 +134,10 @@ export async function sendStep(
       text: renderText(st.text, ctx),
       material,
     });
-    return "ok";
+    // Antes un envío rechazado por Meta se daba por bueno y el flujo seguía sin avisar.
+    return status === "fallido"
+      ? "falló el envío por WhatsApp (revisa el número del cliente o el estado del canal)"
+      : "ok";
   }
   if (!st.template)
     return "no se envió un mensaje porque pasaron más de 24 h desde el último mensaje del lead y el paso no tiene plantilla de WhatsApp";
@@ -273,6 +277,26 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           await done({ status: "cancelled", cancel_reason: "Se dio de baja" });
           return "ran";
         }
+        // El bot acaba de contestar (p. ej. un flujo por intención, que entra después de la IA):
+        // el primer mensaje del flujo espera 2 minutos para no llegar encimado.
+        if (executed === 0 && !force) {
+          const { data: lastBot } = await sb
+            .from("messages")
+            .select("created_at")
+            .eq("lead_id", lead.id)
+            .eq("sender", "bot")
+            .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+            .limit(1)
+            .maybeSingle();
+          if (lastBot) {
+            await done({
+              current_node: nodeId,
+              current_step: executed,
+              next_run_at: new Date(Date.now() + 120_000).toISOString(),
+            });
+            return "ran";
+          }
+        }
         // Fuera de horario hábil: este mismo paso se reintenta en la siguiente apertura.
         const opensAt = st.businessHours ? nextOpening(account.businessHours, new Date()) : null;
         if (opensAt) {
@@ -390,6 +414,17 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           );
         } else
           await event("aviso", "Aviso sin destinatarios (nadie asignado o sin administradores)");
+      } else if (st.type === "meta_event") {
+        const skipped = await sendFlowMetaEvent(sb, {
+          accountId: account.id,
+          leadId: lead.id,
+          ctwaClid: lr.ctwa_clid,
+          enabled: ar.meta_events_enabled ?? false,
+          eventName: st.event,
+          value: st.value,
+          flowName: flow.name,
+        });
+        if (skipped) await event("meta", skipped);
       } else if (st.type === "condition") {
         const ok = evaluateCondition(st.rule, {
           lead,
@@ -489,4 +524,57 @@ export async function runDueForLead(sb: Sb, leadId: string) {
     if ((await runEnrollment(sb, r.id)) === "ran") ran++;
   }
   return ran;
+}
+
+/** Pasos que corren al instante, sin mandarle nada al lead. */
+const INSTANT = new Set(["action", "assign", "notify"]);
+
+/**
+ * ¿Un flujo recién disparado le va a escribir al lead ahora mismo? Si sí, el bot no contesta ese
+ * mensaje: antes el lead recibía la respuesta del bot y la del flujo al mismo tiempo. Sólo mira
+ * inscripciones de los últimos 5 minutos que aún no corren su primer paso; una condición al
+ * inicio cuenta como "no" para que el lead nunca se quede sin respuesta.
+ */
+export async function flowAnswersNow(sb: Sb, leadId: string, now = new Date()) {
+  const { data: enrollments } = await sb
+    .from("flow_enrollments")
+    .select("flow_id, account_id, current_node, current_step")
+    .eq("lead_id", leadId)
+    .eq("status", "active")
+    .eq("current_step", 0)
+    .lte("next_run_at", now.toISOString())
+    .gte("created_at", new Date(now.getTime() - 5 * 60_000).toISOString());
+  if (!enrollments?.length) return false;
+  const [{ data: flows }, { data: acc }] = await Promise.all([
+    sb
+      .from("flows")
+      .select("*")
+      .in(
+        "id",
+        enrollments.map((e) => e.flow_id),
+      ),
+    sb.from("accounts").select("*").eq("id", enrollments[0]!.account_id).maybeSingle(),
+  ]);
+  const hours = acc ? toAccount(acc).businessHours : undefined;
+  for (const e of enrollments) {
+    const fr = flows?.find((f) => f.id === e.flow_id);
+    if (!fr?.active) continue;
+    const flow = toFlow(fr);
+    const graph = flowGraph(flow.steps);
+    let nodeId = resumeNode(graph, flow.steps, {
+      currentNode: e.current_node,
+      currentStep: e.current_step,
+    });
+    for (let hop = 0; nodeId && hop < MAX_STEPS; hop++) {
+      const node = graph.get(nodeId);
+      if (!node) break;
+      if (node.step.type === "message") {
+        if (!node.step.businessHours || !nextOpening(hours, now)) return true;
+        break;
+      }
+      if (!INSTANT.has(node.step.type)) break;
+      nodeId = node.next;
+    }
+  }
+  return false;
 }

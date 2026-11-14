@@ -35,8 +35,10 @@ export function ImportLeadsDialog({
     if (!parsed.rows.length) return;
     if (parsed.rows.length > 2000) return void toast.error("Máximo 2,000 leads por importación");
     setBusy(true);
-    const n = await importLeads(parsed.rows);
+    const { imported: n, duplicates } = await importLeads(parsed.rows);
     setBusy(false);
+    if (duplicates)
+      toast.info(`${duplicates} ya estaban en ${account.name} y no se volvieron a agregar`);
     if (n) {
       toast.success(`${n} leads importados a ${account.name}`);
       setText("");

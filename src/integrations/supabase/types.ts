@@ -66,6 +66,8 @@ export type Database = {
           created_by_user_id: string | null
           id: string
           initials: string
+          meta_events_enabled: boolean
+          meta_stage_events: Json
           name: string
           product: string
           public_whatsapp: string
@@ -86,6 +88,8 @@ export type Database = {
           created_by_user_id?: string | null
           id: string
           initials: string
+          meta_events_enabled?: boolean
+          meta_stage_events?: Json
           name: string
           product?: string
           public_whatsapp?: string
@@ -106,6 +110,8 @@ export type Database = {
           created_by_user_id?: string | null
           id?: string
           initials?: string
+          meta_events_enabled?: boolean
+          meta_stage_events?: Json
           name?: string
           product?: string
           public_whatsapp?: string
@@ -500,6 +506,72 @@ export type Database = {
           },
         ]
       }
+      meta_events: {
+        Row: {
+          account_id: string
+          attempts: number
+          created_at: string
+          detail: string
+          event_name: string
+          id: string
+          last_error: string | null
+          lead_id: string
+          locked_until: string | null
+          next_attempt_at: string
+          origin: string
+          sent_at: string | null
+          status: string
+          value: number | null
+        }
+        Insert: {
+          account_id: string
+          attempts?: number
+          created_at?: string
+          detail?: string
+          event_name: string
+          id?: string
+          last_error?: string | null
+          lead_id: string
+          locked_until?: string | null
+          next_attempt_at?: string
+          origin: string
+          sent_at?: string | null
+          status?: string
+          value?: number | null
+        }
+        Update: {
+          account_id?: string
+          attempts?: number
+          created_at?: string
+          detail?: string
+          event_name?: string
+          id?: string
+          last_error?: string | null
+          lead_id?: string
+          locked_until?: string | null
+          next_attempt_at?: string
+          origin?: string
+          sent_at?: string | null
+          status?: string
+          value?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meta_events_account_id_fkey"
+            columns: ["account_id"]
+            isOneToOne: false
+            referencedRelation: "accounts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meta_events_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       messages: {
         Row: {
           ai_applied_at: string | null
@@ -514,6 +586,7 @@ export type Database = {
           lead_id: string
           sender: string
           wa_message_id: string | null
+          template_name: string | null
           wa_status: string | null
         }
         Insert: {
@@ -529,6 +602,7 @@ export type Database = {
           lead_id: string
           sender: string
           wa_message_id?: string | null
+          template_name?: string | null
           wa_status?: string | null
         }
         Update: {
@@ -544,6 +618,7 @@ export type Database = {
           lead_id?: string
           sender?: string
           wa_message_id?: string | null
+          template_name?: string | null
           wa_status?: string | null
         }
         Relationships: [
@@ -607,6 +682,12 @@ export type Database = {
           },
         ]
       }
+      platform_admins: {
+        Row: { created_at: string; user_id: string }
+        Insert: { created_at?: string; user_id: string }
+        Update: { created_at?: string; user_id?: string }
+        Relationships: []
+      }
       qr_sources: {
         Row: {
           account_id: string
@@ -653,6 +734,8 @@ export type Database = {
           enabled: boolean
           last_checked_at: string | null
           last_error: string | null
+          meta_capi_token: string
+          meta_dataset_id: string
           phone_number_id: string
           updated_at: string
           verify_token: string
@@ -665,6 +748,8 @@ export type Database = {
           enabled?: boolean
           last_checked_at?: string | null
           last_error?: string | null
+          meta_capi_token?: string
+          meta_dataset_id?: string
           phone_number_id?: string
           updated_at?: string
           verify_token?: string
@@ -677,6 +762,8 @@ export type Database = {
           enabled?: boolean
           last_checked_at?: string | null
           last_error?: string | null
+          meta_capi_token?: string
+          meta_dataset_id?: string
           phone_number_id?: string
           updated_at?: string
           verify_token?: string
@@ -738,6 +825,14 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      templates_sent_since: {
+        Args: { p_account_id: string; p_since: string }
+        Returns: number
+      }
+      ai_tokens_since: {
+        Args: { p_account_id: string; p_since: string }
+        Returns: number
+      }
       assign_lead: {
         Args: {
           p_lead_id: string
@@ -762,6 +857,7 @@ export type Database = {
         Returns: boolean
       }
       flow_norm: { Args: { p: string }; Returns: string }
+      is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean }
       flow_try_enroll: {
         Args: {
           p_account_id: string

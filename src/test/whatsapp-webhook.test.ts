@@ -294,3 +294,30 @@ describe("webhook de WhatsApp", () => {
     expect(inserts()[0]!.payload).toMatchObject({ body: "hola" });
   });
 });
+
+describe("webhook de WhatsApp: respuesta rápida a Meta", () => {
+  it("con waitUntil responde 200 sin esperar a la IA y la deja corriendo", async () => {
+    let finishAi: () => void = () => {};
+    processInboundMessage.mockImplementation(
+      () => new Promise<string>((r) => (finishAi = () => r("processed"))),
+    );
+    const pending: Promise<unknown>[] = [];
+    const raw = payload("wamid.fast");
+    const request = new Request("https://x/api/public/whatsapp/webhook", {
+      method: "POST",
+      body: raw,
+      headers: { "x-hub-signature-256": sign(raw) },
+    });
+    Object.defineProperty(request, "waitUntil", {
+      value: (p: Promise<unknown>) => pending.push(p),
+    });
+    const res = await POST({ request });
+    expect(res.status).toBe(200);
+    expect(inserts()).toHaveLength(1);
+    expect(pending).toHaveLength(1);
+    expect(runDueForLead).not.toHaveBeenCalled();
+    finishAi();
+    await pending[0];
+    expect(runDueForLead).toHaveBeenCalledWith(db.client, "L1");
+  });
+});

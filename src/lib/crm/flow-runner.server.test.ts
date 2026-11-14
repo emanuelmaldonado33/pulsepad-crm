@@ -11,6 +11,7 @@ const dispatchTemplate = vi.fn(async (_: unknown) => ({
 // null = simulación (sin canal); un objeto = canal real de WhatsApp.
 const sendingChannel = vi.fn(async (..._: unknown[]): Promise<object | null> => null);
 vi.mock("./whatsapp.server", () => ({
+  GRAPH: "https://graph.test",
   dispatchMessage: (a: unknown) => dispatchMessage(a),
   dispatchTemplate: (a: unknown) => dispatchTemplate(a),
   sendInternalWhatsApp: (...a: unknown[]) => sendInternalWhatsApp(...a),
@@ -18,6 +19,10 @@ vi.mock("./whatsapp.server", () => ({
 }));
 
 const { runEnrollment, notifyRecipients, notifyBody } = await import("./flow-runner.server");
+
+/** Consulta de "¿el bot acaba de contestar?" que hace el primer mensaje de un flujo. */
+const isBotQuery = (q: FakeQuery) =>
+  q.filters.some((f) => f[0] === "eq" && f[1] === "sender" && f[2] === "bot");
 
 // Mensaje A → ¿respondió? (sí: etiqueta caliente · no: mensaje B y espera 1 día) → etapa P3.
 const steps: FlowStep[] = [
@@ -58,6 +63,7 @@ function setup(opts: { replied: boolean; currentNode?: string | null; currentSte
       };
     if (q.table === "accounts") return { data: { id: "acc", name: "Espacio FX" } };
     if (q.table === "appointments" || q.table === "materials") return { data: [] };
+    if (q.table === "messages" && q.op === "select") return { data: null };
     if (q.table === "messages") return { data: { id: "m" } };
     return {};
   });
@@ -67,7 +73,9 @@ function setup(opts: { replied: boolean; currentNode?: string | null; currentSte
       .slice(1)
       .map((c) => c.payload as Record<string, unknown>);
   const sent = () =>
-    sb.calls.filter((c) => c.table === "messages").map((c) => (c.payload as { body: string }).body);
+    sb.calls
+      .filter((c) => c.table === "messages" && c.op === "insert")
+      .map((c) => (c.payload as { body: string }).body);
   const leadUpdates = () =>
     sb.calls
       .filter((c) => c.table === "leads" && c.op === "update")
@@ -215,6 +223,7 @@ describe("entrega al asesor", () => {
             user_id: n.user_id,
           })),
         };
+      if (q.table === "messages" && q.op === "select" && isBotQuery(q)) return { data: null };
       if (q.table === "messages" && q.op === "select") return { data: [] };
       if (q.table === "appointments" || q.table === "materials") return { data: [] };
       if (q.table === "messages") return { data: { id: "m" } };
@@ -334,6 +343,7 @@ describe("reglas de WhatsApp", () => {
       hours?: unknown;
       template?: Record<string, unknown> | null;
       optedOut?: boolean;
+      lastBotAt?: string;
     } = {},
   ) {
     sendingChannel.mockImplementation(async () => (opts.channel ? { phone_number_id: "1" } : null));
@@ -381,6 +391,8 @@ describe("reglas de WhatsApp", () => {
         return { data: { id: "acc", name: "Espacio FX", business_hours: opts.hours ?? {} } };
       if (q.table === "appointments" || q.table === "materials") return { data: [] };
       if (q.table === "account_memberships") return { data: [] };
+      if (q.table === "messages" && q.op === "select" && isBotQuery(q))
+        return { data: opts.lastBotAt ? { created_at: opts.lastBotAt } : null };
       if (q.table === "messages" && q.op === "select")
         return {
           data:
@@ -417,6 +429,28 @@ describe("reglas de WhatsApp", () => {
     text: "Hola {{nombre}}",
     materialId: null,
     ...extra,
+  });
+
+  it("si el bot acaba de contestar, el primer mensaje del flujo espera 2 minutos", async () => {
+    const t = run([msg()], {
+      channel: true,
+      lastLeadMessageAt: new Date().toISOString(),
+      lastBotAt: new Date().toISOString(),
+    });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual([]);
+    const next = new Date(t.enrUpdates()[0]!.payload["next_run_at"] as string).getTime();
+    expect(next - Date.now()).toBeGreaterThan(100_000);
+  });
+
+  it("un envío fallido queda en el historial del lead", async () => {
+    dispatchMessage.mockResolvedValueOnce("fallido" as never);
+    const t = run([msg()], {
+      channel: true,
+      lastLeadMessageAt: new Date(Date.now() - 2 * HOUR).toISOString(),
+    });
+    await runEnrollment(t.client, "e1");
+    expect(t.events().join(" ")).toContain("falló el envío");
   });
 
   it("con la ventana abierta envía el texto normal", async () => {
@@ -548,5 +582,62 @@ describe("reglas de WhatsApp", () => {
     await runEnrollment(t.client, "e1");
     expect(t.sent()).toEqual([]);
     expect(t.enrUpdates().at(-1)!.payload).toMatchObject({ status: "cancelled" });
+  });
+});
+
+describe("paso «Enviar evento a Meta»", () => {
+  const run = async (lead: Record<string, unknown>, enabled: boolean) => {
+    const sb = fakeSupabase((q: FakeQuery) => {
+      if (
+        q.table === "flow_enrollments" &&
+        q.op === "update" &&
+        q.filters.some((f) => f[0] === "or")
+      )
+        return {
+          data: { id: "e1", flow_id: "f1", lead_id: "l1", account_id: "acc", current_step: 0 },
+        };
+      if (q.table === "flow_enrollments" && q.op === "select")
+        return { data: { status: "active" } };
+      if (q.table === "flows")
+        return {
+          data: {
+            id: "f1",
+            account_id: "acc",
+            name: "Ganados",
+            steps: [{ id: "m", type: "meta_event", event: "Purchase", value: null }],
+          },
+        };
+      if (q.table === "leads")
+        return { data: { id: "l1", account_id: "acc", name: "Ana", stage: 7, tags: [], ...lead } };
+      if (q.table === "accounts")
+        return { data: { id: "acc", name: "Espacio FX", meta_events_enabled: enabled } };
+      if (q.table === "appointments" || q.table === "materials") return { data: [] };
+      return {};
+    });
+    await runEnrollment(sb.client as never, "e1");
+    return sb.calls;
+  };
+  const events = (calls: FakeQuery[]) =>
+    calls.filter((c) => c.table === "lead_events").map((c) => (c.payload as { body: string }).body);
+
+  it("sin anuncio no manda nada y lo explica en el historial", async () => {
+    const calls = await run({ ctwa_clid: null }, true);
+    expect(calls.some((c) => c.table === "meta_events")).toBe(false);
+    expect(events(calls)).toEqual([
+      "No se avisó a Meta «Compró (venta cerrada)»: el cliente no llegó por un anuncio",
+    ]);
+  });
+
+  it("apagado en Configuración tampoco manda", async () => {
+    const calls = await run({ ctwa_clid: "clid" }, false);
+    expect(calls.some((c) => c.table === "meta_events")).toBe(false);
+    expect(events(calls)[0]).toMatch(/apagado/);
+  });
+
+  it("lead de anuncio: lo pone en la cola de Meta", async () => {
+    const calls = await run({ ctwa_clid: "clid" }, true);
+    expect(
+      calls.find((c) => c.table === "meta_events" && c.op === "upsert")?.payload,
+    ).toMatchObject({ lead_id: "l1", event_name: "Purchase", origin: "flujo" });
   });
 });

@@ -14,6 +14,7 @@ import {
   type TriggerType,
   type WaitUnit,
 } from "./flows";
+import { isMetaEvent } from "./meta";
 
 export const FLOW_FILE_VERSION = 1;
 export const MAX_BRANCH_DEPTH = 3;
@@ -266,6 +267,13 @@ export function parseFlow(
         if (mode === "fixed" && !userIds.length)
           throw new Error(`El paso ${at} asigna a una persona fija pero no dice a quién`);
         return { id: sid(), type, mode, userIds: mode === "fixed" ? userIds.slice(0, 1) : userIds };
+      }
+      if (type === "meta_event") {
+        const event = str(s["event"], 30);
+        if (!isMetaEvent(event)) throw new Error(`El paso ${at} usa un evento de Meta desconocido`);
+        const n = Number(s["value"]);
+        const value = s["value"] == null || s["value"] === "" || !(n > 0) ? null : Math.round(n);
+        return { id: sid(), type, event, value };
       }
       if (type === "condition") {
         if (depth >= MAX_BRANCH_DEPTH)

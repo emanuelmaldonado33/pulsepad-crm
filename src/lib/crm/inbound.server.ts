@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { qualifyLead } from "./qualify.server";
+import { flowAnswersNow } from "./flow-runner.server";
 
 type Sb = SupabaseClient<Database>;
 
@@ -36,7 +37,12 @@ export async function processInboundMessage(sb: Sb, messageId: string): Promise<
   if (readError || !msg) throw new Error("No se pudo leer el mensaje reservado");
 
   try {
-    const result = await qualifyLead(sb, msg.lead_id, msg.body, { inboundMessageId: msg.id });
+    // Si un flujo que disparó este mensaje le escribe ya al lead, el bot sólo califica.
+    const suppressReply = await flowAnswersNow(sb, msg.lead_id).catch(() => false);
+    const result = await qualifyLead(sb, msg.lead_id, msg.body, {
+      inboundMessageId: msg.id,
+      suppressReply,
+    });
     const { error: doneError } = await sb
       .from("messages")
       .update({ ai_status: "processed", ai_processing_at: null, ai_last_error: null })

@@ -35,6 +35,8 @@ import {
   toQrSource,
 } from "./db";
 import { newQrCode } from "./qr";
+import { parseStageEvents } from "./meta";
+import { phoneKey } from "./phone";
 import type { Json } from "@/integrations/supabase/types";
 
 interface State {
@@ -80,7 +82,7 @@ interface Ctx {
   uploadMaterial: (file: File, name: string) => Promise<boolean>;
   importLeads: (
     rows: { name: string; phone: string; budget: number | null; tag: string | null }[],
-  ) => Promise<number>;
+  ) => Promise<{ imported: number; duplicates: number }>;
   /** Equipo de la subcuenta activa. */
   members: Member[];
   /** user_id de quien tiene la sesión abierta. */
@@ -279,6 +281,12 @@ export function CrmProvider({ children }: { children: ReactNode }) {
               : {}),
             ...(patch.businessHours
               ? { business_hours: patch.businessHours as unknown as Json }
+              : {}),
+            ...(patch.metaEventsEnabled !== undefined
+              ? { meta_events_enabled: patch.metaEventsEnabled }
+              : {}),
+            ...(patch.metaStageEvents
+              ? { meta_stage_events: parseStageEvents(patch.metaStageEvents) as Json }
               : {}),
           })
           .eq("id", id);
@@ -515,6 +523,10 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           template: a.template,
           standard_tags: a.standardTags,
         });
+        if (error?.code === "42501") {
+          toast.error("Sólo el administrador de Pulse puede crear subcuentas");
+          return false;
+        }
         if (error) {
           fail("crear la subcuenta", error);
           return false;
@@ -543,7 +555,27 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           messages: [],
           createdAt: "",
         };
-        const payload = rows.map((r) => {
+        // Clientes que ya están en la subcuenta (mismos últimos 10 dígitos): no se duplican,
+        // si no recibirían cada mensaje de los flujos dos veces.
+        const existing = new Set<string>();
+        for (let from = 0; ; from += 1000) {
+          const { data, error } = await supabase
+            .from("leads")
+            .select("phone")
+            .eq("account_id", account.id)
+            .order("id")
+            .range(from, from + 999);
+          if (error) {
+            fail("revisar los leads existentes", error);
+            return { imported: 0, duplicates: 0 };
+          }
+          for (const l of data ?? [])
+            if (phoneKey(l.phone).length === 10) existing.add(phoneKey(l.phone));
+          if (!data || data.length < 1000) break;
+        }
+        const fresh = rows.filter((r) => !r.phone || !existing.has(phoneKey(r.phone)));
+        const duplicates = rows.length - fresh.length;
+        const payload = fresh.map((r) => {
           let l: Lead = {
             ...base,
             name: r.name.slice(0, 120),
@@ -566,7 +598,7 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           n += data?.length ?? 0;
         }
         await reload();
-        return n;
+        return { imported: n, duplicates };
       },
       members: state.members.filter((m) => m.accountId === account.id),
       me: state.me,

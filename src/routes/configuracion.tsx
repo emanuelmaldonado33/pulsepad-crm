@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { AI_MODELS } from "@/lib/crm/models";
 import { useEffect, useState } from "react";
 import { Cpu, Save } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +19,7 @@ import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { WhatsAppChannel } from "@/components/crm/WhatsAppChannel";
 import { QrSources } from "@/components/crm/QrSources";
+import { MetaEvents } from "@/components/crm/MetaEvents";
 import { Switch } from "@/components/ui/switch";
 import type { Member } from "@/lib/crm/types";
 import { DEFAULT_TZ, WEEKDAYS, hoursConfigured, type BusinessHours } from "@/lib/crm/flows";
@@ -42,15 +44,7 @@ export const Route = createFileRoute("/configuracion")({
   component: Config,
 });
 
-const MODELS = [
-  ["openai/gpt-6-astra", "Máxima calidad"],
-  ["openai/gpt-6-sol", "Equilibrado"],
-  ["openai/gpt-6-luna", "Rápido y económico"],
-  // Claude usa tu propia API key de Anthropic (secreto ANTHROPIC_API_KEY).
-  ["anthropic/claude-opus-5-5", "Claude Opus 5.5 · máxima calidad"],
-  ["anthropic/claude-sonnet-5-5", "Claude Sonnet 5.5 · equilibrado"],
-  ["anthropic/claude-haiku-5-5", "Claude Haiku 5.5 · rápido y económico"],
-] as const;
+const MODELS = AI_MODELS;
 
 interface UsageRow {
   model: string;
@@ -69,6 +63,7 @@ function Config() {
           <TabsTrigger value="ia">IA y marca</TabsTrigger>
           <TabsTrigger value="whatsapp">Canal WhatsApp</TabsTrigger>
           <TabsTrigger value="qr">Lonas y QR</TabsTrigger>
+          <TabsTrigger value="meta">Meta (anuncios)</TabsTrigger>
           <TabsTrigger value="equipo">Equipo</TabsTrigger>
           <TabsTrigger value="horario">Horario hábil</TabsTrigger>
         </TabsList>
@@ -80,6 +75,9 @@ function Config() {
         </TabsContent>
         <TabsContent value="qr" className="mt-4">
           <QrSources key={account.id} />
+        </TabsContent>
+        <TabsContent value="meta" className="mt-4">
+          <MetaEvents />
         </TabsContent>
         <TabsContent value="equipo" className="mt-4">
           <TeamConfig key={account.id} />

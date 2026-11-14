@@ -146,6 +146,21 @@ const adOf = (r: Referral) =>
       }
     : {};
 
+/**
+ * Deja trabajo corriendo después de responder, si el servidor lo permite (Cloudflare da
+ * waitUntil; src/server.ts lo pega a la petición). Devuelve false si hay que hacerlo antes.
+ */
+function runAfterResponse(request: Request, work: () => Promise<void>) {
+  const waitUntil = (request as Request & { waitUntil?: (p: Promise<unknown>) => void }).waitUntil;
+  if (typeof waitUntil !== "function") return false;
+  try {
+    waitUntil.call(request, work());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const Route = createFileRoute("/api/public/whatsapp/webhook")({
   server: {
     handlers: {
@@ -188,6 +203,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
         const { mediaOf, mediaToText } = await import("@/lib/crm/media.server");
+        const { openChannel } = await import("@/lib/crm/secrets.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
         const leadsWithNews = new Set<string>();
@@ -199,7 +215,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
             const v = change.value;
             const pnid = v.metadata?.phone_number_id;
             if (!pnid || !v.messages?.length) continue; // estados de entrega, etc.
-            const { data: ch, error: channelError } = await sb
+            const { data: stored, error: channelError } = await sb
               .from("whatsapp_channels")
               .select("*")
               .eq("phone_number_id", pnid)
@@ -209,7 +225,17 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               console.error("whatsapp webhook channel lookup failed", channelError.message);
               return new Response("Temporary failure", { status: 500 });
             }
-            if (!ch) continue;
+            if (!stored) continue;
+            let ch: typeof stored;
+            try {
+              ch = await openChannel(stored);
+            } catch (e) {
+              console.error(
+                "whatsapp channel secrets unreadable",
+                e instanceof Error ? e.message : e,
+              );
+              return new Response("Temporary failure", { status: 500 });
+            }
             if (!(await validSignature(raw, sigHeader, ch.app_secret)))
               return new Response("Invalid signature", { status: 401 });
 
@@ -302,27 +328,29 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
             }
           }
 
-        // 2) Responder con IA. Un error queda en la fila (ai_status = error) y el barrido de
-        //    /api/public/flows-tick lo reintenta con límite; Meta recibe 200 de todos modos.
-        for (const id of toProcess) {
-          try {
-            await processInboundMessage(sb, id);
-          } catch (e) {
-            console.error(
-              "webhook AI processing failed",
-              e instanceof Error ? e.message : "unknown error",
-            );
+        // 2) Responder con IA y 3) correr los flujos que dispararon estos mensajes. Meta ya no
+        //    espera a la IA: si el servidor permite seguir trabajando después de responder
+        //    (waitUntil), se contesta 200 de inmediato. Lo que falle lo retoma flows-tick.
+        const followUp = async () => {
+          for (const id of toProcess) {
+            try {
+              await processInboundMessage(sb, id);
+            } catch (e) {
+              console.error(
+                "webhook AI processing failed",
+                e instanceof Error ? e.message : "unknown error",
+              );
+            }
           }
-        }
-        // 3) Correr ya los flujos que dispararon estos mensajes (respuesta, palabra clave o
-        //    intención). Lo que falle aquí lo retoma el cron de flows-tick.
-        for (const leadId of leadsWithNews) {
-          try {
-            await runDueForLead(sb, leadId);
-          } catch (e) {
-            console.error("webhook flow run failed", e instanceof Error ? e.message : e);
+          for (const leadId of leadsWithNews) {
+            try {
+              await runDueForLead(sb, leadId);
+            } catch (e) {
+              console.error("webhook flow run failed", e instanceof Error ? e.message : e);
+            }
           }
-        }
+        };
+        if (!runAfterResponse(request, followUp)) await followUp();
         return new Response("OK");
       },
     },

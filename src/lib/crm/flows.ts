@@ -1,4 +1,5 @@
 import type { Account, Appointment, Lead } from "./types";
+import type { MetaEventName } from "./meta";
 
 export type WaitUnit = "min" | "hour" | "day";
 export type LeadNumberField = "budget" | "downPayment" | "termMonths";
@@ -60,6 +61,8 @@ export type FlowStep =
   | { id: string; type: "notify"; to: NotifyTarget[]; text: string; whatsapp: boolean }
   /** userIds vacío = todo el equipo. fixed usa el primero. */
   | { id: string; type: "assign"; mode: "fixed" | "round_robin"; userIds: string[] }
+  /** Avisa a Meta (Conversions API) para que los anuncios aprendan. value = monto real de la venta; null = sin monto (nunca el presupuesto). */
+  | { id: string; type: "meta_event"; event: MetaEventName; value: number | null }
   | { id: string; type: "condition"; rule: ConditionRule; yes: FlowStep[]; no: FlowStep[] }
   | { id: string; type: "end" };
 
@@ -798,4 +801,55 @@ export function nextOpening(h: BusinessHours | null | undefined, now: Date): Dat
     return new Date(zonedInstant(z.y, z.mo, z.d + k, span.open, tz));
   }
   return null;
+}
+
+const validTz = (tz: string | undefined) => {
+  try {
+    zoned(0, tz || DEFAULT_TZ);
+    return tz || DEFAULT_TZ;
+  } catch {
+    return DEFAULT_TZ;
+  }
+};
+
+/**
+ * Hora que el bot propone para la cita: el siguiente día hábil (desde mañana) a las 11:00, o
+ * dentro del horario de la subcuenta si las 11:00 caen fuera. Sin horario configurado se saltan
+ * sábado y domingo. Antes siempre era "mañana a las 11:00", aunque fuera domingo.
+ */
+export function appointmentSlot(h: BusinessHours | null | undefined, now: Date): Date {
+  const tz = validTz(h?.tz);
+  const z = zoned(now.getTime(), tz);
+  const preferred = 11 * 60;
+  for (let k = 1; k <= 14; k++) {
+    const wd = (z.wd + k) % 7;
+    let min = preferred;
+    if (hoursConfigured(h)) {
+      const span = daySpan(h, wd);
+      if (!span) continue;
+      min = Math.max(span.open, Math.min(preferred, span.close - 60));
+    } else if (wd === 0 || wd === 6) continue;
+    return new Date(zonedInstant(z.y, z.mo, z.d + k, min, tz));
+  }
+  return new Date(zonedInstant(z.y, z.mo, z.d + 1, preferred, tz));
+}
+
+/** "el lunes 16 de noviembre a las 11:00" en la zona horaria de la subcuenta. */
+export function slotLabel(at: Date, h: BusinessHours | null | undefined) {
+  const tz = validTz(h?.tz);
+  const day = new Intl.DateTimeFormat("es-MX", {
+    timeZone: tz,
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  })
+    .format(at)
+    .replace(",", "");
+  const time = new Intl.DateTimeFormat("es-MX", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(at);
+  return `el ${day} a las ${time}`;
 }
