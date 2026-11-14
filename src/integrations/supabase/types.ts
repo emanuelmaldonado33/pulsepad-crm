@@ -734,6 +734,8 @@ export type Database = {
           enabled: boolean
           last_checked_at: string | null
           last_error: string | null
+          meta_capi_token: string
+          meta_dataset_id: string
           phone_number_id: string
           updated_at: string
           verify_token: string
@@ -746,6 +748,8 @@ export type Database = {
           enabled?: boolean
           last_checked_at?: string | null
           last_error?: string | null
+          meta_capi_token?: string
+          meta_dataset_id?: string
           phone_number_id?: string
           updated_at?: string
           verify_token?: string
@@ -758,6 +762,8 @@ export type Database = {
           enabled?: boolean
           last_checked_at?: string | null
           last_error?: string | null
+          meta_capi_token?: string
+          meta_dataset_id?: string
           phone_number_id?: string
           updated_at?: string
           verify_token?: string

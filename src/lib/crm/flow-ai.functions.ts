@@ -46,7 +46,7 @@ Responde SOLO con un objeto JSON (sin texto extra) con esta forma:
       .map((e) => `"${e}"`)
       .join(
         " | ",
-      )}, "value": number | null },   // avisa a Meta que el lead de anuncio avanzó (Purchase = venta, value = monto o null para usar el presupuesto)
+      )}, "value": number | null },   // avisa a Meta que el lead de anuncio avanzó (Purchase = venta, value = monto real de la venta o null si no se sabe; nunca el presupuesto)
     { "type": "condition", "rule": Regla, "yes": [pasos], "no": [pasos] },   // rama sí/no; al terminar la rama sigue el paso de abajo
     { "type": "end" }   // termina el flujo para ese lead
   ]

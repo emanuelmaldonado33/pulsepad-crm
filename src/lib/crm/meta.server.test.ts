@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fakeSupabase, type FakeQuery, type FakeResult } from "@/test/fake-supabase";
+import { encryptSecret } from "./secrets.server";
 import {
   buildMetaEvent,
   deliverMetaEvent,
@@ -35,7 +36,8 @@ const db = (over: (q: FakeQuery) => FakeResult | undefined = () => undefined) =>
     if (o) return o;
     if (q.table === "meta_events" && q.op === "update" && q.single) return { data: { id: "ev1" } };
     if (q.table === "leads") return { data: { ctwa_clid: "clid-abc", budget: 1800000 } };
-    if (q.table === "whatsapp_channels") return { data: { waba_id: "waba-9" } };
+    if (q.table === "whatsapp_channels")
+      return { data: { waba_id: "waba-9", meta_dataset_id: "123", meta_capi_token: "secreto" } };
     return undefined;
   });
 const finalUpdate = (calls: FakeQuery[]) =>
@@ -116,15 +118,18 @@ describe("postMetaEvents", () => {
 });
 
 describe("deliverMetaEvent", () => {
-  it("manda la compra con el presupuesto del lead y lo deja en el historial", async () => {
+  it("manda la compra al dataset de la subcuenta, sin usar el presupuesto, y lo deja en el historial", async () => {
     const sb = db();
-    expect(await deliverMetaEvent(sb.client as never, row, cfg, now)).toBe("enviado");
-    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+    expect(await deliverMetaEvent(sb.client as never, row, now)).toBe("enviado");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/123\/events$/);
+    const body = JSON.parse(String(init.body));
+    expect(body.access_token).toBe("secreto");
     expect(body.data[0]).toMatchObject({
       event_name: "Purchase",
       event_time: Math.floor(new Date(row.created_at).getTime() / 1000),
       user_data: { ctwa_clid: "clid-abc", whatsapp_business_account_id: "waba-9" },
-      custom_data: { value: 1800000, currency: "MXN" },
+      custom_data: { value: 0, currency: "MXN" },
     });
     expect(finalUpdate(sb.calls)).toMatchObject({ status: "enviado", last_error: null });
     expect(sb.calls.find((c) => c.table === "lead_events")?.payload).toMatchObject({
@@ -136,52 +141,76 @@ describe("deliverMetaEvent", () => {
     const sb = db((q) =>
       q.table === "meta_events" && q.op === "update" && q.single ? { data: null } : undefined,
     );
-    expect(await deliverMetaEvent(sb.client as never, row, cfg, now)).toBe("ocupado");
+    expect(await deliverMetaEvent(sb.client as never, row, now)).toBe("ocupado");
     expect(fetchMock).not.toHaveBeenCalled();
   });
-  it("sin secretos lo deja en la cola", async () => {
-    const sb = db();
-    expect(await deliverMetaEvent(sb.client as never, row, null, now)).toBe("pendiente");
-    expect(sb.calls).toHaveLength(0);
+  it("manda el monto real que puso el flujo", async () => {
+    await deliverMetaEvent(db().client as never, { ...row, value: 2500000 }, now);
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body));
+    expect(body.data[0].custom_data).toEqual({ currency: "MXN", value: 2500000 });
+  });
+  it("lee el token cifrado de la subcuenta", async () => {
+    vi.stubEnv("CHANNEL_SECRETS_KEY", btoa(String.fromCharCode(...new Uint8Array(32).fill(7))));
+    const enc = await encryptSecret("token-cifrado");
+    expect(enc).toMatch(/^enc:v1:/);
+    const sb = db((q) =>
+      q.table === "whatsapp_channels"
+        ? { data: { waba_id: "waba-9", meta_dataset_id: "555", meta_capi_token: enc } }
+        : undefined,
+    );
+    expect(await deliverMetaEvent(sb.client as never, row, now)).toBe("enviado");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toMatch(/\/555\/events$/);
+    expect(JSON.parse(String(init.body)).access_token).toBe("token-cifrado");
+  });
+  it("sin dataset propio no usa el de otra subcuenta", async () => {
+    vi.stubEnv("META_DATASET_ID", "999");
+    vi.stubEnv("META_CAPI_TOKEN", "global");
+    vi.stubEnv("META_CAPI_ACCOUNT_ID", "otra");
+    const noCfg = () =>
+      db((q) =>
+        q.table === "whatsapp_channels"
+          ? { data: { waba_id: "waba-9", meta_dataset_id: "", meta_capi_token: "" } }
+          : undefined,
+      );
+    const sb = noCfg();
+    expect(await deliverMetaEvent(sb.client as never, row, now)).toBe("omitido");
+    expect(finalUpdate(sb.calls)?.["last_error"]).toMatch(/conjunto de datos/);
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Los secretos sólo valen para la subcuenta que nombra META_CAPI_ACCOUNT_ID.
+    vi.stubEnv("META_CAPI_ACCOUNT_ID", "acc");
+    expect(await deliverMetaEvent(noCfg().client as never, row, now)).toBe("enviado");
+    expect((fetchMock.mock.calls[0] as [string])[0]).toMatch(/\/999\/events$/);
   });
   it("omite eventos de más de 7 días y canales sin WABA", async () => {
     const old = { ...row, created_at: "2026-10-20T12:00:00Z" };
-    expect(await deliverMetaEvent(db().client as never, old, cfg, now)).toBe("omitido");
+    expect(await deliverMetaEvent(db().client as never, old, now)).toBe("omitido");
     const noWaba = db((q) => (q.table === "whatsapp_channels" ? { data: null } : undefined));
-    expect(await deliverMetaEvent(noWaba.client as never, row, cfg, now)).toBe("omitido");
+    expect(await deliverMetaEvent(noWaba.client as never, row, now)).toBe("omitido");
     expect(finalUpdate(noWaba.calls)?.["last_error"]).toMatch(/WABA ID/);
     expect(fetchMock).not.toHaveBeenCalled();
   });
   it("si Meta falla reintenta más tarde y al quinto intento se rinde", async () => {
     fetchMock.mockResolvedValue(new Response("", { status: 500 }));
     const sb = db();
-    expect(await deliverMetaEvent(sb.client as never, row, cfg, now)).toBe("pendiente");
+    expect(await deliverMetaEvent(sb.client as never, row, now)).toBe("pendiente");
     expect(finalUpdate(sb.calls)).toMatchObject({
       status: "pendiente",
       next_attempt_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
     });
     expect(sb.calls.some((c) => c.table === "lead_events")).toBe(false);
-    expect(await deliverMetaEvent(db().client as never, { ...row, attempts: 4 }, cfg, now)).toBe(
+    expect(await deliverMetaEvent(db().client as never, { ...row, attempts: 4 }, now)).toBe(
       "fallido",
     );
   });
 });
 
 describe("processMetaEvents", () => {
-  it("sin secretos no toca la cola", async () => {
-    vi.stubEnv("META_DATASET_ID", "");
-    vi.stubEnv("META_CAPI_TOKEN", "");
-    const sb = db();
-    expect(await processMetaEvents(sb.client as never)).toEqual({ configured: false, sent: 0 });
-    expect(sb.calls).toHaveLength(0);
-  });
   it("manda los vencidos", async () => {
-    vi.stubEnv("META_DATASET_ID", "123");
-    vi.stubEnv("META_CAPI_TOKEN", "secreto");
     const sb = db((q) =>
       q.table === "meta_events" && q.op === "select" ? { data: [row] } : undefined,
     );
-    expect(await processMetaEvents(sb.client as never)).toEqual({ configured: true, sent: 1 });
+    expect(await processMetaEvents(sb.client as never, 50, now)).toEqual({ sent: 1 });
   });
 });
 
@@ -206,11 +235,16 @@ describe("sendFlowMetaEvent", () => {
     expect(sb.calls).toHaveLength(0);
   });
   it("lo pone en la cola una vez por lead y lo manda", async () => {
-    vi.stubEnv("META_DATASET_ID", "123");
-    vi.stubEnv("META_CAPI_TOKEN", "secreto");
     const sb = db((q) =>
       q.table === "meta_events" && q.op === "upsert"
-        ? { data: { ...row, event_name: "QualifiedLead", origin: "flujo" } }
+        ? {
+            data: {
+              ...row,
+              event_name: "QualifiedLead",
+              origin: "flujo",
+              created_at: new Date().toISOString(),
+            },
+          }
         : undefined,
     );
     expect(await sendFlowMetaEvent(sb.client as never, p)).toBeNull();

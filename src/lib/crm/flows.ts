@@ -61,7 +61,7 @@ export type FlowStep =
   | { id: string; type: "notify"; to: NotifyTarget[]; text: string; whatsapp: boolean }
   /** userIds vacío = todo el equipo. fixed usa el primero. */
   | { id: string; type: "assign"; mode: "fixed" | "round_robin"; userIds: string[] }
-  /** Avisa a Meta (Conversions API) para que los anuncios aprendan. value = monto; null = presupuesto del lead. */
+  /** Avisa a Meta (Conversions API) para que los anuncios aprendan. value = monto real de la venta; null = sin monto (nunca el presupuesto). */
   | { id: string; type: "meta_event"; event: MetaEventName; value: number | null }
   | { id: string; type: "condition"; rule: ConditionRule; yes: FlowStep[]; no: FlowStep[] }
   | { id: string; type: "end" };

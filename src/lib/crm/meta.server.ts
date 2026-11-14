@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { GRAPH } from "./whatsapp.server";
 import { META_EVENTS, type MetaEventName } from "./meta";
+import { decryptSecret } from "./secrets.server";
 
 type Sb = SupabaseClient<Database>;
 type MetaEventRow = Database["public"]["Tables"]["meta_events"]["Row"];
@@ -12,12 +13,33 @@ const MAX_ATTEMPTS = 5;
 const MAX_AGE_MS = 7 * 86_400_000;
 const CURRENCY = "MXN";
 
-/** Conjunto de datos y token de Meta, sólo en secretos de Lovable Cloud. */
-export function metaConfig() {
-  const datasetId = process.env["META_DATASET_ID"]?.trim() ?? "";
-  const token = process.env["META_CAPI_TOKEN"]?.trim() ?? "";
+export type MetaConfig = { datasetId: string; token: string; testCode?: string | undefined };
+
+/**
+ * Conjunto de datos y token de Meta de UNA subcuenta, para que los eventos de un cliente nunca
+ * caigan en el dataset de otro. Se guardan en su canal de WhatsApp (token cifrado). Los secretos
+ * META_DATASET_ID y META_CAPI_TOKEN sólo valen para la subcuenta META_CAPI_ACCOUNT_ID.
+ */
+export async function metaConfigFor(
+  sb: Sb,
+  accountId: string,
+): Promise<{ cfg: MetaConfig | null; wabaId: string }> {
+  const { data: ch } = await sb
+    .from("whatsapp_channels")
+    .select("waba_id, meta_dataset_id, meta_capi_token")
+    .eq("account_id", accountId)
+    .maybeSingle();
   const testCode = process.env["META_TEST_EVENT_CODE"]?.trim() || undefined;
-  return datasetId && token ? { datasetId, token, testCode } : null;
+  const wabaId = ch?.waba_id ?? "";
+  const datasetId = ch?.meta_dataset_id?.trim() ?? "";
+  const token = ch?.meta_capi_token ? (await decryptSecret(ch.meta_capi_token)).trim() : "";
+  if (datasetId && token) return { cfg: { datasetId, token, testCode }, wabaId };
+  const envAccount = process.env["META_CAPI_ACCOUNT_ID"]?.trim();
+  const envDataset = process.env["META_DATASET_ID"]?.trim() ?? "";
+  const envToken = process.env["META_CAPI_TOKEN"]?.trim() ?? "";
+  if (envAccount && envAccount === accountId && envDataset && envToken)
+    return { cfg: { datasetId: envDataset, token: envToken, testCode }, wabaId };
+  return { cfg: null, wabaId };
 }
 
 /** Id estable del evento: Meta lo usa para no contar dos veces el mismo. */
@@ -54,7 +76,7 @@ export type MetaSendResult = { ok: true } | { ok: false; error: string; retry: b
 
 /** Manda los eventos al conjunto de datos. El token va en el cuerpo, nunca en la URL. */
 export async function postMetaEvents(
-  cfg: NonNullable<ReturnType<typeof metaConfig>>,
+  cfg: MetaConfig,
   events: ReturnType<typeof buildMetaEvent>[],
 ): Promise<MetaSendResult> {
   let res: Response;
@@ -92,10 +114,8 @@ const backoff = (attempt: number) => 5 * 60_000 * 2 ** Math.max(0, attempt - 1);
 export async function deliverMetaEvent(
   sb: Sb,
   row: MetaEventRow,
-  cfg = metaConfig(),
   now = new Date(),
 ): Promise<string> {
-  if (!cfg) return "pendiente";
   const { data: claimed } = await sb
     .from("meta_events")
     .update({
@@ -137,21 +157,35 @@ export async function deliverMetaEvent(
 
   if (now.getTime() - new Date(row.created_at).getTime() > MAX_AGE_MS)
     return finish("omitido", "pasaron más de 7 días y Meta ya no lo acepta");
-  const [{ data: lead }, { data: ch }] = await Promise.all([
-    sb.from("leads").select("ctwa_clid, budget").eq("id", row.lead_id).maybeSingle(),
-    sb.from("whatsapp_channels").select("waba_id").eq("account_id", row.account_id).maybeSingle(),
-  ]);
+  let meta: Awaited<ReturnType<typeof metaConfigFor>>;
+  try {
+    meta = await metaConfigFor(sb, row.account_id);
+  } catch {
+    return finish("fallido", "no se pudo leer el token de Meta (revisa CHANNEL_SECRETS_KEY)");
+  }
+  const { data: lead } = await sb
+    .from("leads")
+    .select("ctwa_clid")
+    .eq("id", row.lead_id)
+    .maybeSingle();
   if (!lead?.ctwa_clid) return finish("omitido", "el cliente no llegó por un anuncio de WhatsApp");
-  if (!ch?.waba_id) return finish("omitido", "falta el WABA ID en Configuración › Canal WhatsApp");
+  if (!meta.wabaId) return finish("omitido", "falta el WABA ID en Configuración › Canal WhatsApp");
+  if (!meta.cfg)
+    return finish(
+      "omitido",
+      "falta el conjunto de datos y el token de Meta en Configuración › Meta (anuncios)",
+    );
+  const cfg = meta.cfg;
 
   const r = await postMetaEvents(cfg, [
     buildMetaEvent({
       eventName: row.event_name as MetaEventName,
       eventId: metaEventId(row.lead_id, row.event_name),
       eventTime: new Date(row.created_at),
-      wabaId: ch.waba_id,
+      wabaId: meta.wabaId,
       ctwaClid: lead.ctwa_clid,
-      value: row.value ?? (lead.budget == null ? null : Number(lead.budget)),
+      // Sólo el monto real que puso el flujo; nunca el presupuesto que dijo el cliente.
+      value: row.value == null ? null : Number(row.value),
     }),
   ]);
   if (r.ok) return finish("enviado", null);
@@ -161,10 +195,7 @@ export async function deliverMetaEvent(
 }
 
 /** Manda los eventos vencidos de la cola (lo llama /api/public/flows-tick). */
-export async function processMetaEvents(sb: Sb, limit = 50) {
-  const cfg = metaConfig();
-  if (!cfg) return { configured: false, sent: 0 };
-  const now = new Date();
+export async function processMetaEvents(sb: Sb, limit = 50, now = new Date()) {
   const { data } = await sb
     .from("meta_events")
     .select("*")
@@ -174,9 +205,8 @@ export async function processMetaEvents(sb: Sb, limit = 50) {
     .order("next_attempt_at")
     .limit(limit);
   let sent = 0;
-  for (const row of data ?? [])
-    if ((await deliverMetaEvent(sb, row, cfg, now)) === "enviado") sent++;
-  return { configured: true, sent };
+  for (const row of data ?? []) if ((await deliverMetaEvent(sb, row, now)) === "enviado") sent++;
+  return { sent };
 }
 
 /**

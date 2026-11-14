@@ -1,8 +1,8 @@
 -- Eventos a Meta (Conversions API para WhatsApp).
 -- Cuando un lead que llegó por un anuncio de Click-to-WhatsApp (leads.ctwa_clid) avanza en el
 -- pipeline, o un flujo lo pide, se guarda un evento en public.meta_events. El servidor lo manda
--- a Meta desde /api/public/flows-tick con el dataset y el token de los secretos META_DATASET_ID
--- y META_CAPI_TOKEN. Nada de esto llega al navegador.
+-- a Meta desde /api/public/flows-tick con el conjunto de datos y el token de ESA subcuenta
+-- (whatsapp_channels.meta_dataset_id y meta_capi_token, cifrado). Nada de esto llega al navegador.
 -- Usa 0021 porque 0019 es la coexistencia de WhatsApp (PR #12) y 0020 los QR (PR #15).
 
 -- Sólo los eventos que Meta acepta para conversaciones de WhatsApp (igual que src/lib/crm/meta.ts).
@@ -22,6 +22,12 @@ LANGUAGE sql IMMUTABLE AS $$
   )
 $$;
 
+-- Conjunto de datos y token de Meta de cada subcuenta: los eventos de un cliente nunca van al
+-- dataset de otro. Viven en whatsapp_channels, que el navegador no puede leer; el token se
+-- guarda cifrado (CHANNEL_SECRETS_KEY).
+ALTER TABLE public.whatsapp_channels ADD COLUMN IF NOT EXISTS meta_dataset_id text NOT NULL DEFAULT '';
+ALTER TABLE public.whatsapp_channels ADD COLUMN IF NOT EXISTS meta_capi_token text NOT NULL DEFAULT '';
+
 -- Interruptor general y qué evento manda cada etapa. Lo cambian owner y admin (accounts_admin_update).
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS meta_events_enabled boolean NOT NULL DEFAULT false;
 ALTER TABLE public.accounts ADD COLUMN IF NOT EXISTS meta_stage_events jsonb NOT NULL DEFAULT '{}'::jsonb;
@@ -38,7 +44,8 @@ CREATE TABLE IF NOT EXISTS public.meta_events (
   -- etapa = automático por el pipeline; flujo = paso «Enviar evento a Meta».
   origin text NOT NULL CHECK (origin IN ('etapa', 'flujo')),
   detail text NOT NULL DEFAULT '',
-  -- Monto de la compra; NULL = usa el presupuesto del lead al enviar.
+  -- Monto real de la compra (paso de flujo). NULL = sin monto: nunca se usa el presupuesto
+  -- que dijo el cliente, porque Meta optimizaría con ventas que no ocurrieron.
   value numeric CHECK (value IS NULL OR value >= 0),
   status text NOT NULL DEFAULT 'pendiente'
     CHECK (status IN ('pendiente', 'enviando', 'enviado', 'omitido', 'fallido')),

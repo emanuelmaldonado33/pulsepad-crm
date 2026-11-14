@@ -15,8 +15,9 @@ import {
   type StageEventKey,
   type StageEvents,
 } from "@/lib/crm/meta";
-import { getMetaStatus, type MetaStatus } from "@/lib/crm/meta.functions";
+import { getMetaStatus, saveMetaCapi, type MetaStatus } from "@/lib/crm/meta.functions";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 
 const sel = "h-11 min-w-56 rounded-md border border-input bg-background px-3 text-base";
@@ -48,7 +49,11 @@ export function MetaEvents() {
     (m) => m.userId === me && (m.role === "owner" || m.role === "admin"),
   );
   const fetchStatus = useServerFn(getMetaStatus);
+  const saveCapi = useServerFn(saveMetaCapi);
   const [status, setStatus] = useState<MetaStatus | null>(null);
+  const [datasetId, setDatasetId] = useState("");
+  const [token, setToken] = useState("");
+  const [savingCapi, setSavingCapi] = useState(false);
   const saved = account.metaStageEvents ?? {};
   const [draft, setDraft] = useState<StageEvents>(saved);
   const [rows, setRows] = useState<EventRow[]>([]);
@@ -57,7 +62,11 @@ export function MetaEvents() {
   useEffect(() => {
     let live = true;
     fetchStatus({ data: { accountId: account.id } })
-      .then((s) => live && setStatus(s))
+      .then((s) => {
+        if (!live) return;
+        setStatus(s);
+        setDatasetId(s.datasetId);
+      })
       .catch(() => live && setStatus(null));
     void supabase
       .from("meta_events")
@@ -90,7 +99,7 @@ export function MetaEvents() {
           <Check ok={!!status?.configured}>
             {status?.configured
               ? `Conexión con Meta lista${status.testMode ? " (modo de prueba)" : ""}`
-              : "Falta la conexión con Meta: pide que pongan META_DATASET_ID y META_CAPI_TOKEN en los secretos de Lovable Cloud"}
+              : "Falta la conexión con Meta: pon abajo el conjunto de datos y el token de esta subcuenta"}
           </Check>
           <Check ok={!!status?.hasWaba}>
             {status?.hasWaba
@@ -98,6 +107,53 @@ export function MetaEvents() {
               : "Falta el WABA ID en Configuración › Canal WhatsApp"}
           </Check>
         </ul>
+        {isAdmin && (
+          <form
+            className="space-y-2 rounded-xl border p-3"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setSavingCapi(true);
+              saveCapi({ data: { accountId: account.id, datasetId: datasetId.trim(), token } })
+                .then(() => fetchStatus({ data: { accountId: account.id } }))
+                .then((s) => {
+                  setStatus(s);
+                  setToken("");
+                  toast.success("Conexión con Meta guardada");
+                })
+                .catch((err: unknown) =>
+                  toast.error(err instanceof Error ? err.message : "No se pudo guardar"),
+                )
+                .finally(() => setSavingCapi(false));
+            }}
+          >
+            <p className="text-sm text-muted-foreground">
+              Conexión de esta subcuenta. Sácalos del Administrador de eventos de Meta del negocio
+              del cliente: los avisos de un cliente nunca van al de otro.
+            </p>
+            <label className="block space-y-1">
+              <span className="text-sm font-medium">ID del conjunto de datos</span>
+              <Input
+                inputMode="numeric"
+                value={datasetId}
+                onChange={(e) => setDatasetId(e.target.value)}
+                placeholder="Ej. 1234567890"
+              />
+            </label>
+            <label className="block space-y-1">
+              <span className="text-sm font-medium">Token de acceso (Conversions API)</span>
+              <Input
+                type="password"
+                autoComplete="off"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={status?.configured ? "Guardado. Escribe uno nuevo para cambiarlo" : ""}
+              />
+            </label>
+            <Button type="submit" variant="outline" disabled={savingCapi}>
+              Guardar conexión
+            </Button>
+          </form>
+        )}
         <label className="flex items-center gap-3 text-base font-medium">
           <Switch
             aria-label="Enviar eventos a Meta"
@@ -172,7 +228,8 @@ export function MetaEvents() {
         )}
         <p className="text-xs text-muted-foreground">
           Recomendado: cliente nuevo, prospecto calificado al llegar a {STAGES[4].code} y compra al
-          ganar la venta (con el presupuesto del cliente como monto).
+          ganar la venta. Para mandar el monto real de la venta usa el paso «Enviar evento a Meta»
+          en un seguimiento; nunca se manda el presupuesto que dijo el cliente.
         </p>
       </section>
 
