@@ -8,6 +8,7 @@ import {
   FlaskConical,
   KanbanSquare,
   LogOut,
+  Megaphone,
   MessageCircle,
   Plus,
   Settings2,
@@ -24,6 +25,7 @@ const NAV = [
   { to: "/simulador", label: "Simulador", icon: FlaskConical },
   { to: "/citas", label: "Citas", icon: CalendarDays },
   { to: "/flujos", label: "Flujos", icon: Workflow },
+  { to: "/difusiones", label: "Difusiones", icon: Megaphone },
   { to: "/configuracion", label: "Configuración IA", icon: Settings2 },
 ] as const;
 

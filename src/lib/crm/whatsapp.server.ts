@@ -1,4 +1,5 @@
 import type { Material, WaTemplate } from "./flows";
+import { openChannel } from "./secrets.server";
 
 const GRAPH_API_VERSION = process.env["WHATSAPP_GRAPH_API_VERSION"] ?? "v26.0";
 export const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -32,7 +33,7 @@ export async function getChannel(accountId: string) {
     .eq("account_id", accountId)
     .maybeSingle();
   if (!data || !data.enabled || !data.phone_number_id || !data.access_token) return null;
-  return data;
+  return openChannel(data);
 }
 
 async function graphSend(phoneNumberId: string, token: string, payload: Record<string, unknown>) {
@@ -47,10 +48,21 @@ async function graphSend(phoneNumberId: string, token: string, payload: Record<s
   });
   const body = (await res.json().catch(() => ({}))) as {
     messages?: { id: string }[];
-    error?: { message?: string };
+    error?: { message?: string; code?: number };
   };
-  if (!res.ok) throw new Error(body.error?.message ?? `Meta respondió ${res.status}`);
+  if (!res.ok)
+    throw new GraphError(body.error?.message ?? `Meta respondió ${res.status}`, body.error?.code);
   return body.messages?.[0]?.id ?? null;
+}
+
+/** Error de la API de WhatsApp con su código (p. ej. 131048 = frenado por spam). */
+export class GraphError extends Error {
+  constructor(
+    message: string,
+    readonly code?: number,
+  ) {
+    super(message);
+  }
 }
 
 /** Canal real para escribirle a este lead; null = simulación (sin canal o lead del simulador). */
@@ -185,7 +197,7 @@ export async function dispatchTemplate(opts: {
   const ch = await sendingChannel(opts.accountId, opts.source, opts.phone);
   if (!ch) {
     await sb.from("messages").update({ wa_status: "simulado" }).eq("id", opts.messageId);
-    return { status: "simulado" as const, error: null };
+    return { status: "simulado" as const, error: null, waId: null };
   }
   try {
     const waId = await graphSend(ch.phone_number_id, ch.access_token, {
@@ -194,14 +206,18 @@ export async function dispatchTemplate(opts: {
     });
     await sb
       .from("messages")
-      .update({ wa_status: "enviado", wa_message_id: waId })
+      .update({ wa_status: "enviado", wa_message_id: waId, template_name: opts.template.name })
       .eq("id", opts.messageId);
-    return { status: "enviado" as const, error: null };
+    return { status: "enviado" as const, error: null, waId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("whatsapp template failed", opts.accountId, msg);
     await sb.from("messages").update({ wa_status: "fallido" }).eq("id", opts.messageId);
-    return { status: "fallido" as const, error: msg };
+    return {
+      status: "fallido" as const,
+      error: msg,
+      code: e instanceof GraphError ? e.code : undefined,
+    };
   }
 }
 
@@ -316,8 +332,32 @@ export async function checkCredentials(phoneNumberId: string, token: string) {
   };
 }
 
+/**
+ * Comprueba que el WABA ID es la cuenta de WhatsApp Business del número, con el mismo token.
+ * Sin esto cualquiera podía escribir el WABA de otro negocio y estorbar sus avisos de Meta.
+ */
+export async function checkWaba(wabaId: string, phoneNumberId: string, token: string) {
+  const res = await fetch(
+    `${GRAPH}/${encodeURIComponent(wabaId)}/phone_numbers?fields=id&limit=100`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const body = (await res.json().catch(() => ({}))) as {
+    data?: { id?: string }[];
+    error?: { message?: string };
+  };
+  if (!res.ok)
+    return { ok: false as const, error: body.error?.message ?? `Meta respondió ${res.status}` };
+  if (!(body.data ?? []).some((p) => p.id === phoneNumberId))
+    return {
+      ok: false as const,
+      error: "Ese WABA ID no es la cuenta de WhatsApp Business de este número",
+    };
+  return { ok: true as const };
+}
+
 type ChannelInput = {
   phoneNumberId: string;
+  wabaId?: string | undefined;
   accessToken?: string | undefined;
   appSecret?: string | undefined;
   clearAccessToken: boolean;
@@ -332,8 +372,14 @@ type ChannelInput = {
  */
 export async function planChannelSave(
   input: ChannelInput,
-  cur: { phone_number_id: string; access_token: string; app_secret: string } | null,
+  cur: {
+    phone_number_id: string;
+    access_token: string;
+    app_secret: string;
+    waba_id?: string;
+  } | null,
   check: typeof checkCredentials,
+  wabaCheck: typeof checkWaba = checkWaba,
 ): Promise<
   { ok: true; token: string; appSecret: string; info: string } | { ok: false; error: string }
 > {
@@ -352,5 +398,40 @@ export async function planChannelSave(
     if (!r.ok) return { ok: false, error: r.error };
     info = `${r.name} ${r.phone}`.trim();
   }
+  const wabaChanged = (input.wabaId ?? "") !== (cur?.waba_id ?? "");
+  if (
+    input.wabaId &&
+    token &&
+    input.phoneNumberId &&
+    (wabaChanged || phoneChanged || tokenChanged)
+  ) {
+    const w = await wabaCheck(input.wabaId, input.phoneNumberId, token);
+    if (!w.ok) return { ok: false, error: w.error };
+  }
   return { ok: true, token, appSecret, info };
+}
+
+/** Calidad y límite diario del número según Meta. */
+export type PhoneHealth = { quality: string | null; limit: string | null };
+
+/**
+ * Lee la calidad (GREEN, YELLOW, RED) y el límite de conversaciones nuevas en 24 h del número.
+ * Si Meta ya no acepta el campo del límite, se pide sólo la calidad.
+ */
+export async function fetchPhoneHealth(phoneNumberId: string, token: string): Promise<PhoneHealth> {
+  const get = async (fields: string) => {
+    const res = await fetch(
+      `${GRAPH}/${encodeURIComponent(phoneNumberId)}?fields=${encodeURIComponent(fields)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    const body = (await res.json().catch(() => ({}))) as {
+      quality_rating?: string;
+      messaging_limit_tier?: string;
+      error?: { message?: string };
+    };
+    if (!res.ok) throw new Error(body.error?.message ?? `Meta respondió ${res.status}`);
+    return body;
+  };
+  const body = await get("quality_rating,messaging_limit_tier").catch(() => get("quality_rating"));
+  return { quality: body.quality_rating ?? null, limit: body.messaging_limit_tier ?? null };
 }

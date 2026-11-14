@@ -294,3 +294,137 @@ describe("webhook de WhatsApp", () => {
     expect(inserts()[0]!.payload).toMatchObject({ body: "hola" });
   });
 });
+
+describe("estados de entrega y calidad del número", () => {
+  const statusPayload = () =>
+    JSON.stringify({
+      entry: [
+        {
+          changes: [
+            {
+              field: "messages",
+              value: {
+                metadata: { phone_number_id: "1000001" },
+                statuses: [
+                  { id: "wamid.OUT", status: "read", timestamp: "1762110000" },
+                  {
+                    id: "wamid.BAD",
+                    status: "failed",
+                    timestamp: "1762110001",
+                    errors: [{ code: 131026, title: "Message undeliverable" }],
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+  it("guarda leído y fallido sin pasar por la IA", async () => {
+    const res = await post(statusPayload());
+    expect(res.status).toBe(200);
+    const rpcs = db.calls.filter((c) => c.op === "rpc" && c.table === "apply_wa_status");
+    expect(rpcs.map((c) => c.payload)).toEqual([
+      {
+        p_wa_id: "wamid.OUT",
+        p_status: "read",
+        p_account_id: "acc",
+        p_at: new Date(1762110000 * 1000).toISOString(),
+      },
+      {
+        p_wa_id: "wamid.BAD",
+        p_status: "failed",
+        p_account_id: "acc",
+        p_at: new Date(1762110001 * 1000).toISOString(),
+        p_error: "131026 · Message undeliverable",
+      },
+    ]);
+    expect(inserts()).toHaveLength(0);
+    expect(processInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it("los estados también exigen firma válida", async () => {
+    const raw = statusPayload();
+    expect((await post(raw, sign(raw, "otro"))).status).toBe(401);
+    expect(db.calls.some((c) => c.op === "rpc")).toBe(false);
+  });
+
+  it("si Meta marca el número, guarda el aviso y pausa las difusiones", async () => {
+    normal((q) =>
+      q.table === "whatsapp_channels" && q.op === "select" ? { data: [channel] } : undefined,
+    );
+    const raw = JSON.stringify({
+      entry: [
+        {
+          id: "WABA1",
+          changes: [
+            {
+              field: "phone_number_quality_update",
+              value: {
+                display_phone_number: "523312345678",
+                event: "FLAGGED",
+                current_limit: "TIER_250",
+              },
+            },
+          ],
+        },
+      ],
+    });
+    expect((await post(raw)).status).toBe(200);
+    const updates = db.calls.filter((c) => c.op === "update");
+    expect(updates.find((c) => c.table === "whatsapp_channels")?.payload).toEqual({
+      quality_event: "FLAGGED",
+      messaging_limit: "TIER_250",
+    });
+    expect(updates.find((c) => c.table === "broadcasts")?.payload).toMatchObject({
+      status: "pausada",
+    });
+  });
+
+  it("un número del mismo WABA con otra firma se salta sin tumbar el aviso", async () => {
+    normal((q) =>
+      q.table === "whatsapp_channels" && q.op === "select"
+        ? { data: [{ ...channel, account_id: "OTRA", app_secret: "otro" }, channel] }
+        : undefined,
+    );
+    const raw = JSON.stringify({
+      entry: [
+        {
+          id: "WABA1",
+          changes: [{ field: "phone_number_quality_update", value: { event: "FLAGGED" } }],
+        },
+      ],
+    });
+    expect((await post(raw)).status).toBe(200);
+    const chUpdates = db.calls.filter((c) => c.op === "update" && c.table === "whatsapp_channels");
+    expect(chUpdates).toHaveLength(1);
+  });
+});
+
+describe("webhook de WhatsApp: respuesta rápida a Meta", () => {
+  it("con waitUntil responde 200 sin esperar a la IA y la deja corriendo", async () => {
+    let finishAi: () => void = () => {};
+    processInboundMessage.mockImplementation(
+      () => new Promise<string>((r) => (finishAi = () => r("processed"))),
+    );
+    const pending: Promise<unknown>[] = [];
+    const raw = payload("wamid.fast");
+    const request = new Request("https://x/api/public/whatsapp/webhook", {
+      method: "POST",
+      body: raw,
+      headers: { "x-hub-signature-256": sign(raw) },
+    });
+    Object.defineProperty(request, "waitUntil", {
+      value: (p: Promise<unknown>) => pending.push(p),
+    });
+    const res = await POST({ request });
+    expect(res.status).toBe(200);
+    expect(inserts()).toHaveLength(1);
+    expect(pending).toHaveLength(1);
+    expect(runDueForLead).not.toHaveBeenCalled();
+    finishAi();
+    await pending[0];
+    expect(runDueForLead).toHaveBeenCalledWith(db.client, "L1");
+  });
+});

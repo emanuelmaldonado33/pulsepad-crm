@@ -10,14 +10,46 @@ const payloadSchema = z
     entry: z
       .array(
         z.object({
+          // WABA ID: los avisos de calidad del número traen sólo éste.
+          id: z.string().max(40).optional(),
           changes: z
             .array(
               z.object({
+                field: z.string().max(80).optional(),
                 value: z
                   .object({
                     metadata: z
                       .object({ phone_number_id: z.string().regex(/^\d+$/).max(40) })
                       .optional(),
+                    // Estados de entrega de lo que mandamos (enviado, entregado, leído, fallido).
+                    statuses: z
+                      .array(
+                        z
+                          .object({
+                            id: z.string().min(1).max(250),
+                            status: z.string().max(40),
+                            timestamp: z
+                              .string()
+                              .regex(/^\d{1,12}$/)
+                              .optional(),
+                            errors: z
+                              .array(
+                                z
+                                  .object({
+                                    code: z.number().optional(),
+                                    title: z.string().max(500).optional(),
+                                    message: z.string().max(1000).optional(),
+                                  })
+                                  .passthrough(),
+                              )
+                              .optional(),
+                          })
+                          .passthrough(),
+                      )
+                      .optional(),
+                    // Aviso de calidad del número (phone_number_quality_update).
+                    event: z.string().max(40).optional(),
+                    current_limit: z.string().max(40).optional(),
                     contacts: z
                       .array(
                         z.object({
@@ -146,6 +178,21 @@ const adOf = (r: Referral) =>
       }
     : {};
 
+/**
+ * Deja trabajo corriendo después de responder, si el servidor lo permite (Cloudflare da
+ * waitUntil; src/server.ts lo pega a la petición). Devuelve false si hay que hacerlo antes.
+ */
+function runAfterResponse(request: Request, work: () => Promise<void>) {
+  const waitUntil = (request as Request & { waitUntil?: (p: Promise<unknown>) => void }).waitUntil;
+  if (typeof waitUntil !== "function") return false;
+  try {
+    waitUntil.call(request, work());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export const Route = createFileRoute("/api/public/whatsapp/webhook")({
   server: {
     handlers: {
@@ -188,6 +235,9 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
         const { mediaOf, mediaToText } = await import("@/lib/crm/media.server");
+        const { qualityStop } = await import("@/lib/crm/broadcasts");
+        const { pauseAccountBroadcasts } = await import("@/lib/crm/broadcasts.server");
+        const { decryptSecret, openChannel } = await import("@/lib/crm/secrets.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
         const leadsWithNews = new Set<string>();
@@ -197,9 +247,34 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         for (const entry of payload.entry)
           for (const change of entry.changes) {
             const v = change.value;
+            // Meta avisa que bajó, subió o marcó la calidad del número: se guarda y, si el
+            // número quedó marcado, se pausan las difusiones.
+            if (change.field === "phone_number_quality_update" && entry.id && v.event) {
+              const { data: chans } = await sb
+                .from("whatsapp_channels")
+                .select("account_id, app_secret")
+                .eq("waba_id", entry.id)
+                .eq("enabled", true);
+              // Un WABA puede tener varios números (y apps): sólo cuenta el canal cuya firma
+              // coincide. Uno que no coincide se salta; no tumba el aviso de los demás.
+              for (const c of chans ?? []) {
+                const secret = await decryptSecret(c.app_secret).catch(() => "");
+                if (!secret || !(await validSignature(raw, sigHeader, secret))) continue;
+                await sb
+                  .from("whatsapp_channels")
+                  .update({
+                    quality_event: v.event.slice(0, 40),
+                    ...(v.current_limit ? { messaging_limit: v.current_limit.slice(0, 40) } : {}),
+                  })
+                  .eq("account_id", c.account_id);
+                const stop = qualityStop(null, v.event);
+                if (stop) await pauseAccountBroadcasts(sb, c.account_id, stop);
+              }
+              continue;
+            }
             const pnid = v.metadata?.phone_number_id;
-            if (!pnid || !v.messages?.length) continue; // estados de entrega, etc.
-            const { data: ch, error: channelError } = await sb
+            if (!pnid || (!v.messages?.length && !v.statuses?.length)) continue;
+            const { data: stored, error: channelError } = await sb
               .from("whatsapp_channels")
               .select("*")
               .eq("phone_number_id", pnid)
@@ -209,11 +284,43 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               console.error("whatsapp webhook channel lookup failed", channelError.message);
               return new Response("Temporary failure", { status: 500 });
             }
-            if (!ch) continue;
+            if (!stored) continue;
+            let ch: typeof stored;
+            try {
+              ch = await openChannel(stored);
+            } catch (e) {
+              console.error(
+                "whatsapp channel secrets unreadable",
+                e instanceof Error ? e.message : e,
+              );
+              return new Response("Temporary failure", { status: 500 });
+            }
             if (!(await validSignature(raw, sigHeader, ch.app_secret)))
               return new Response("Invalid signature", { status: 401 });
 
-            for (const m of v.messages) {
+            // Entregado, leído o fallido: actualiza el chat y el reporte de difusiones.
+            for (const st of v.statuses ?? []) {
+              const err = st.errors?.[0];
+              const { error: stError } = await sb.rpc("apply_wa_status", {
+                p_wa_id: st.id,
+                p_status: st.status,
+                p_account_id: ch.account_id,
+                p_at: st.timestamp
+                  ? new Date(Number(st.timestamp) * 1000).toISOString()
+                  : new Date().toISOString(),
+                ...(err
+                  ? {
+                      p_error: [err.code, err.title ?? err.message].filter(Boolean).join(" · "),
+                    }
+                  : {}),
+              });
+              if (stError) {
+                console.error("whatsapp status failed", stError.message);
+                return new Response("Temporary failure", { status: 500 });
+              }
+            }
+
+            for (const m of v.messages ?? []) {
               const { data: existing, error: existingError } = await sb
                 .from("messages")
                 .select("id, lead_id")
@@ -302,27 +409,29 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
             }
           }
 
-        // 2) Responder con IA. Un error queda en la fila (ai_status = error) y el barrido de
-        //    /api/public/flows-tick lo reintenta con límite; Meta recibe 200 de todos modos.
-        for (const id of toProcess) {
-          try {
-            await processInboundMessage(sb, id);
-          } catch (e) {
-            console.error(
-              "webhook AI processing failed",
-              e instanceof Error ? e.message : "unknown error",
-            );
+        // 2) Responder con IA y 3) correr los flujos que dispararon estos mensajes. Meta ya no
+        //    espera a la IA: si el servidor permite seguir trabajando después de responder
+        //    (waitUntil), se contesta 200 de inmediato. Lo que falle lo retoma flows-tick.
+        const followUp = async () => {
+          for (const id of toProcess) {
+            try {
+              await processInboundMessage(sb, id);
+            } catch (e) {
+              console.error(
+                "webhook AI processing failed",
+                e instanceof Error ? e.message : "unknown error",
+              );
+            }
           }
-        }
-        // 3) Correr ya los flujos que dispararon estos mensajes (respuesta, palabra clave o
-        //    intención). Lo que falle aquí lo retoma el cron de flows-tick.
-        for (const leadId of leadsWithNews) {
-          try {
-            await runDueForLead(sb, leadId);
-          } catch (e) {
-            console.error("webhook flow run failed", e instanceof Error ? e.message : e);
+          for (const leadId of leadsWithNews) {
+            try {
+              await runDueForLead(sb, leadId);
+            } catch (e) {
+              console.error("webhook flow run failed", e instanceof Error ? e.message : e);
+            }
           }
-        }
+        };
+        if (!runAfterResponse(request, followUp)) await followUp();
         return new Response("OK");
       },
     },

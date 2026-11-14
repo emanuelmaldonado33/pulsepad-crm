@@ -2,6 +2,15 @@ import { useEffect, useRef } from "react";
 import type { Message } from "@/lib/crm/types";
 import { MESSAGE_INTENTS, type MessageIntent } from "@/lib/crm/flows";
 
+/** Lo que Meta reporta de cada mensaje que mandamos. */
+const WA_STATUS_LABEL: Record<string, string> = {
+  enviado: "Enviado",
+  entregado: "Entregado",
+  leido: "Leído",
+  fallido: "No enviado",
+  simulado: "Simulado",
+};
+
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
 const day = (iso: string) =>
@@ -64,7 +73,7 @@ export function ChatThread({ messages, typing }: { messages: Message[]; typing?:
                 <div
                   className={`mt-1 pr-1 text-right text-[11px] ${failed ? "text-destructive" : "text-muted-foreground"}`}
                 >
-                  {m.waStatus === "enviado" ? "Entregado" : failed ? "No enviado" : "Simulado"}
+                  {WA_STATUS_LABEL[m.waStatus] ?? "Simulado"}
                 </div>
               )}
             </div>

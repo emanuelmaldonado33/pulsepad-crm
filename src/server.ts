@@ -46,6 +46,15 @@ function isH3SwallowedErrorBody(body: string): boolean {
 
 export default {
   async fetch(request: Request, env: unknown, ctx: unknown) {
+    // El webhook de WhatsApp responde a Meta y termina la IA en segundo plano con waitUntil.
+    const c = ctx as { waitUntil?: (p: Promise<unknown>) => void } | null | undefined;
+    if (c && typeof c.waitUntil === "function" && !("waitUntil" in request)) {
+      try {
+        Object.defineProperty(request, "waitUntil", { value: c.waitUntil.bind(c) });
+      } catch {
+        // Petición congelada: el webhook trabaja antes de responder, como antes.
+      }
+    }
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);

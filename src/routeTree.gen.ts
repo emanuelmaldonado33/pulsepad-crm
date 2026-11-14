@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CitasRouteImport } from './routes/citas'
 import { Route as ConfiguracionRouteImport } from './routes/configuracion'
+import { Route as DifusionesRouteImport } from './routes/difusiones'
 import { Route as FlujosRouteImport } from './routes/flujos'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as SimuladorRouteImport } from './routes/simulador'
@@ -31,6 +32,11 @@ const CitasRoute = CitasRouteImport.update({
 const ConfiguracionRoute = ConfiguracionRouteImport.update({
   id: '/configuracion',
   path: '/configuracion',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DifusionesRoute = DifusionesRouteImport.update({
+  id: '/difusiones',
+  path: '/difusiones',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FlujosRoute = FlujosRouteImport.update({
@@ -64,6 +70,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
   '/configuracion': typeof ConfiguracionRoute
+  '/difusiones': typeof DifusionesRoute
   '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
@@ -74,6 +81,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
   '/configuracion': typeof ConfiguracionRoute
+  '/difusiones': typeof DifusionesRoute
   '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
@@ -85,6 +93,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/citas': typeof CitasRoute
   '/configuracion': typeof ConfiguracionRoute
+  '/difusiones': typeof DifusionesRoute
   '/flujos': typeof FlujosRoute
   '/inbox': typeof InboxRoute
   '/simulador': typeof SimuladorRoute
@@ -97,6 +106,7 @@ export interface FileRouteTypes {
     | '/'
     | '/citas'
     | '/configuracion'
+    | '/difusiones'
     | '/flujos'
     | '/inbox'
     | '/simulador'
@@ -107,6 +117,7 @@ export interface FileRouteTypes {
     | '/'
     | '/citas'
     | '/configuracion'
+    | '/difusiones'
     | '/flujos'
     | '/inbox'
     | '/simulador'
@@ -117,6 +128,7 @@ export interface FileRouteTypes {
     | '/'
     | '/citas'
     | '/configuracion'
+    | '/difusiones'
     | '/flujos'
     | '/inbox'
     | '/simulador'
@@ -128,6 +140,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CitasRoute: typeof CitasRoute
   ConfiguracionRoute: typeof ConfiguracionRoute
+  DifusionesRoute: typeof DifusionesRoute
   FlujosRoute: typeof FlujosRoute
   InboxRoute: typeof InboxRoute
   SimuladorRoute: typeof SimuladorRoute
@@ -156,6 +169,13 @@ declare module '@tanstack/react-router' {
       path: '/configuracion'
       fullPath: '/configuracion'
       preLoaderRoute: typeof ConfiguracionRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/difusiones': {
+      id: '/difusiones'
+      path: '/difusiones'
+      fullPath: '/difusiones'
+      preLoaderRoute: typeof DifusionesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/flujos': {
@@ -200,6 +220,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CitasRoute: CitasRoute,
   ConfiguracionRoute: ConfiguracionRoute,
+  DifusionesRoute: DifusionesRoute,
   FlujosRoute: FlujosRoute,
   InboxRoute: InboxRoute,
   SimuladorRoute: SimuladorRoute,

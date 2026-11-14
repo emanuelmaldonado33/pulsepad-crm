@@ -1,4 +1,5 @@
 /* Parser de CSV de leads: funciones puras. */
+import { normalizePhone, phoneKey } from "./phone";
 
 export interface ImportRow {
   name: string;
@@ -83,6 +84,7 @@ export function parseLeadsTable(text: string): { rows: ImportRow[]; errors: stri
     : ["name", "phone", "budget", "tag"];
   const rows: ImportRow[] = [];
   const errors: string[] = [];
+  const seen = new Set<string>();
   lines.slice(hasHeader ? 1 : 0).forEach((line, i) => {
     const cells = splitLine(line, sep);
     const r: ImportRow = { name: "", phone: "", budget: null, tag: null };
@@ -94,8 +96,18 @@ export function parseLeadsTable(text: string): { rows: ImportRow[]; errors: stri
         r.tag = v ? v.toLowerCase().replace(/^#/, "").replace(/\s+/g, "-") : null;
       else r[k] = v;
     });
-    if (!r.name) errors.push(`Fila ${i + (hasHeader ? 2 : 1)}: falta el nombre`);
-    else rows.push(r);
+    const row = i + (hasHeader ? 2 : 1);
+    if (!r.name) return void errors.push(`Fila ${row}: falta el nombre`);
+    if (r.phone) {
+      const phone = normalizePhone(r.phone);
+      if (!phone) return void errors.push(`Fila ${row}: el teléfono «${r.phone}» no es válido`);
+      // Mismo cliente dos veces en el archivo: recibiría todo doble.
+      if (seen.has(phoneKey(phone)))
+        return void errors.push(`Fila ${row}: el teléfono ${phone} está repetido`);
+      seen.add(phoneKey(phone));
+      r.phone = phone;
+    }
+    rows.push(r);
   });
   return { rows, errors };
 }
