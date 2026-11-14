@@ -228,10 +228,16 @@ async function sendBatch(
         }
       : undefined;
 
-  const [sentByBroadcast24h, sentByAccount24h] = await Promise.all([
+  const [sentByBroadcast24h, broadcastByAccount24h, templates24h] = await Promise.all([
     countSent(sb, "broadcast_id", b.id),
     countSent(sb, "account_id", b.account_id),
+    // El límite de Meta cuenta TODAS las plantillas del número (flujos incluidos), no sólo
+    // las difusiones: personas distintas que recibieron una plantilla en 24 h.
+    sb
+      .rpc("templates_sent_since", { p_account_id: b.account_id, p_since: since(DAY_MS) })
+      .then(({ data }) => Number(data ?? 0)),
   ]);
+  const sentByAccount24h = Math.max(broadcastByAccount24h, templates24h);
   const n = batchSize({
     dailyCap: b.daily_cap,
     tier: health.limit,

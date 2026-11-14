@@ -1,8 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { TAG_RULES, applyTag, type BotEvent } from "./automation";
-import { leadPatch, toLead, toMessage } from "./db";
-import { MESSAGE_INTENTS } from "./flows";
+import { leadPatch, toAccount, toLead, toMessage } from "./db";
+import { MESSAGE_INTENTS, appointmentSlot, slotLabel } from "./flows";
+import { allowedModel } from "./models";
+import { assertAiBudget } from "./ai-budget.server";
 import type { Lead } from "./types";
 import { dispatchMessage } from "./whatsapp.server";
 
@@ -13,7 +15,12 @@ export async function qualifyLead(
   sb: SupabaseClient<Database>,
   leadId: string,
   text: string,
-  opts: { skipInsert?: boolean; inboundMessageId?: string } = {},
+  opts: {
+    skipInsert?: boolean;
+    inboundMessageId?: string;
+    /** Un flujo contesta este mensaje: la IA califica pero no responde (una sola respuesta). */
+    suppressReply?: boolean;
+  } = {},
 ) {
   const { data: row, error: le } = await sb.from("leads").select("*").eq("id", leadId).single();
   if (le || !row) throw new Error("Lead no encontrado");
@@ -34,6 +41,11 @@ export async function qualifyLead(
       .single();
     if (ie || !im) throw new Error("No se pudo guardar el mensaje");
     leadMessageId = im.id;
+    // Simulador: igual que en WhatsApp, si un flujo contesta este mensaje el bot no responde.
+    if (opts.suppressReply === undefined) {
+      const { flowAnswersNow } = await import("./flow-runner.server");
+      opts = { ...opts, suppressReply: await flowAnswersNow(sb, row.id).catch(() => false) };
+    }
   }
   // Los 60 mensajes más recientes, en orden cronológico para la IA.
   const { data: recent } = await sb
@@ -58,6 +70,12 @@ export async function qualifyLead(
     };
   }
 
+  // Tope diario de IA por subcuenta: frena abusos y bucles antes de gastar.
+  await assertAiBudget(sb, acc.id);
+  const model = allowedModel(acc.ai_model);
+  const hours = toAccount(acc).businessHours;
+  const slot = appointmentSlot(hours, new Date());
+
   // Sólo se comparten enlaces de la biblioteca de la cuenta; nunca uno inventado.
   const { data: library } = await sb
     .from("materials")
@@ -78,7 +96,7 @@ ETAPAS DEL PIPELINE: P0 Nuevo, P1 Contactado, P2 En calificación, P3 Material/V
 ${materialRule}
 En message_intent clasifica sólo el último mensaje del prospecto: quiere_comprar (quiere apartar, comprar o pagar), pide_precio (pregunta precio, costo o cotización), pide_cita (pide llamada, visita o cita), objecion (duda o freno: precio alto, desconfianza, "lo voy a pensar"), no_interesado, quiere_humano (pide hablar con una persona), pide_baja (pide que ya no le escriban o no recibir más mensajes; no basta con que no le interese) u otro.
 Si un mensaje del prospecto empieza con "🎤 (nota de voz)" es la transcripción automática de un audio que mandó: respóndelo como si lo hubiera escrito. Si dice "🖼️ (imagen: …)" es la descripción automática de una foto que mandó, seguida de su texto si escribió alguno; úsala como dato. Si el audio o la imagen no se pudo leer, pídele amablemente que lo escriba.
-Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y confirma la cita para mañana a las 11:00.
+Si el prospecto acepta o pide una cita y su perfil está completo, marca appointment_requested=true y propón la cita para ${slotLabel(slot, hours)}, aclarando que un asesor se la confirma. No ofrezcas otro día ni otra hora.
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
 Extrae datos de TODO el historial, no sólo del último mensaje. Los montos deben ser números en pesos (ej. "1.2 millones" = 1200000; "20% de enganche" sobre 1,000,000 = 200000).
@@ -88,7 +106,7 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
   let ai;
   try {
     ai = await runQualifier({
-      model: acc.ai_model,
+      model,
       system,
       messages: lead.messages.map((m) => ({
         role: m.from === "lead" ? ("user" as const) : ("assistant" as const),
@@ -204,17 +222,26 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       });
   }
   if (booked) {
-    const at = new Date(Date.now() + 24 * 3600_000);
-    at.setUTCHours(17, 0, 0, 0); // 11:00 CDMX
     await sb
       .from("appointments")
-      .insert({ account_id: acc.id, lead_id: lead.id, at: at.toISOString(), kind: "Llamada" });
-    events.push({ kind: "cita", text: "Cita creada en la agenda" });
+      .insert({ account_id: acc.id, lead_id: lead.id, at: slot.toISOString(), kind: "Llamada" });
+    events.push({ kind: "cita", text: `Cita propuesta ${slotLabel(slot, hours)}` });
+    await notifyAppointment(sb, {
+      accountId: acc.id,
+      leadId: lead.id,
+      leadName: lead.name,
+      phone: lead.phone,
+      assignedTo: row.assigned_to ?? null,
+      when: slotLabel(slot, hours),
+      summary: o.summary?.trim() || "",
+    });
   }
   // Pidió no recibir mensajes: la base lo da de baja (0014) y no se le contesta.
   const optOut = o.message_intent === "pide_baja";
   if (optOut) events.push({ kind: "bot", text: "Pidió no recibir mensajes: dado de baja" });
-  const reply = optOut ? null : o.reply.trim() || null;
+  if (opts.suppressReply && !optOut)
+    events.push({ kind: "bot", text: "Un flujo contesta este mensaje: el bot no responde" });
+  const reply = optOut || opts.suppressReply ? null : o.reply.trim() || null;
   if (reply) {
     const { data: bm } = await sb
       .from("messages")
@@ -241,7 +268,7 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
   const { error: usageError } = await supabaseAdmin.from("ai_usage").insert({
     account_id: acc.id,
     lead_id: lead.id,
-    model: acc.ai_model,
+    model,
     input_tokens: ai.usage.input,
     output_tokens: ai.usage.output,
     total_tokens: ai.usage.total,
@@ -249,4 +276,56 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
   if (usageError) console.error("AI usage log failed", usageError.message);
   events.push({ kind: "dato", text: `Tokens usados: ${ai.usage.total.toLocaleString("es-MX")}` });
   return { reply, events, summary: o.summary, tokens: ai.usage.total, contextUntil };
+}
+
+/**
+ * Aviso de cita nueva al asesor asignado (o a owners y admins si nadie la tiene): sin esto la
+ * cita quedaba en la agenda y nadie se enteraba de que había que llamar.
+ */
+async function notifyAppointment(
+  sb: SupabaseClient<Database>,
+  p: {
+    accountId: string;
+    leadId: string;
+    leadName: string;
+    phone: string;
+    assignedTo: string | null;
+    when: string;
+    summary: string;
+  },
+) {
+  const { data: members } = await sb
+    .from("account_memberships")
+    .select("user_id, role")
+    .eq("account_id", p.accountId);
+  const to = (members ?? []).filter((m) =>
+    p.assignedTo ? m.user_id === p.assignedTo : m.role === "owner" || m.role === "admin",
+  );
+  const body = [
+    `El bot propuso una llamada ${p.when}. Confírmala con el cliente.`,
+    p.summary ? `Resumen IA:\n${p.summary}` : "",
+    `${p.leadName} · ${p.phone}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const [{ error }] = await Promise.all([
+    to.length
+      ? sb.from("notifications").insert(
+          to.map((m) => ({
+            account_id: p.accountId,
+            user_id: m.user_id,
+            lead_id: p.leadId,
+            title: `Cita con ${p.leadName}`,
+            body,
+          })),
+        )
+      : Promise.resolve({ error: null }),
+    sb.from("lead_events").insert({
+      account_id: p.accountId,
+      lead_id: p.leadId,
+      kind: "cita",
+      body: `El bot propuso una llamada ${p.when}`.slice(0, 500),
+    }),
+  ]);
+  if (error) console.error("appointment notify failed", error.message);
 }

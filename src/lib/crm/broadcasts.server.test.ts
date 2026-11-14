@@ -125,6 +125,14 @@ describe("runBroadcast", () => {
     );
   });
 
+  it("cuenta las plantillas de los flujos contra el límite de Meta", async () => {
+    // TIER_1K con margen del 90% = 900; los flujos ya mandaron 900 plantillas hoy.
+    base(["L1"], (q) => (q.table === "templates_sent_since" ? { data: 900 } : undefined));
+    expect(await runBroadcast(sb, "B1")).toBe(0);
+    expect(db.calls.some((c) => c.table === "claim_broadcast_batch")).toBe(false);
+    expect(dispatchTemplate).not.toHaveBeenCalled();
+  });
+
   it("con calidad roja no envía y pausa las difusiones de la cuenta", async () => {
     base(["L1"]);
     getChannel.mockResolvedValue({

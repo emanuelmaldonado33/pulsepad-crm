@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { exportFlow, parseFlow } from "./flow-io";
 import {
+  appointmentSlot,
+  slotLabel,
   END_NODE,
   nextOpening,
   stepsAtRiskOfClosedWindow,
@@ -297,5 +299,22 @@ describe("reglas de WhatsApp", () => {
       expect(nextOpening({}, new Date())).toBeNull();
       expect(nextOpening({ days: [["19:00", "09:00"]] }, new Date())).toBeNull();
     });
+  });
+});
+
+describe("hora que el bot propone para la cita", () => {
+  // Viernes 13 de noviembre de 2026, 7 pm en CDMX (UTC-6).
+  const friday = new Date("2026-11-14T01:00:00Z");
+  it("sin horario salta el fin de semana: viernes → lunes 11:00", () => {
+    expect(appointmentSlot({}, friday).toISOString()).toBe("2026-11-16T17:00:00.000Z");
+    expect(slotLabel(appointmentSlot({}, friday), {})).toBe("el lunes 16 de noviembre a las 11:00");
+  });
+  it("con horario usa el siguiente día abierto y lo mueve dentro del horario", () => {
+    const hours = {
+      tz: "America/Mexico_City",
+      days: [null, null, null, null, null, null, ["13:00", "18:00"] as const],
+    };
+    // Sólo abre sábado de 13 a 18: la cita queda el sábado a las 13:00.
+    expect(appointmentSlot(hours, friday).toISOString()).toBe("2026-11-14T19:00:00.000Z");
   });
 });

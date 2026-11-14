@@ -179,3 +179,46 @@ describe("waRecipient (521 de México)", () => {
     expect(waRecipient("521551234567")).toBe("521551234567");
   });
 });
+
+describe("planChannelSave (WABA de otro negocio)", () => {
+  const ok = async () => ({ ok: true as const, phone: "+52", name: "FX" });
+  it("rechaza un WABA ID que no es la cuenta del número", async () => {
+    const r = await planChannelSave(
+      {
+        phoneNumberId: "111",
+        wabaId: "999",
+        accessToken: "tok",
+        clearAccessToken: false,
+        clearAppSecret: false,
+        enabled: true,
+      },
+      null,
+      ok,
+      async () => ({
+        ok: false as const,
+        error: "Ese WABA ID no es la cuenta de WhatsApp Business de este número",
+      }),
+    );
+    expect(r).toEqual({
+      ok: false,
+      error: "Ese WABA ID no es la cuenta de WhatsApp Business de este número",
+    });
+  });
+  it("no vuelve a consultar a Meta si nada cambió", async () => {
+    const waba = vi.fn(async () => ({ ok: true as const }));
+    const cur = { phone_number_id: "111", access_token: "tok", app_secret: "", waba_id: "999" };
+    await planChannelSave(
+      {
+        phoneNumberId: "111",
+        wabaId: "999",
+        clearAccessToken: false,
+        clearAppSecret: false,
+        enabled: true,
+      },
+      cur,
+      ok,
+      waba,
+    );
+    expect(waba).not.toHaveBeenCalled();
+  });
+});

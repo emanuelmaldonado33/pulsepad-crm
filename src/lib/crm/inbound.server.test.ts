@@ -46,7 +46,10 @@ describe("processInboundMessage", () => {
     qualifyLead.mockResolvedValue({ contextUntil: "2026-10-28T10:00:00Z" });
     const { client, calls } = db("claimed");
     await expect(processInboundMessage(client as never, "m1")).resolves.toBe("processed");
-    expect(qualifyLead).toHaveBeenCalledWith(client, "L1", "hola", { inboundMessageId: "m1" });
+    expect(qualifyLead).toHaveBeenCalledWith(client, "L1", "hola", {
+      inboundMessageId: "m1",
+      suppressReply: false,
+    });
     const [done, coalesce] = updates(calls);
     expect(done).toMatchObject({ payload: { ai_status: "processed" } });
     expect(done!.filters).toContainEqual(["eq", "ai_status", "processing"]);
