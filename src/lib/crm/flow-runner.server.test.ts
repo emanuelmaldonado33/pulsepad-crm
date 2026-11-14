@@ -20,6 +20,10 @@ vi.mock("./whatsapp.server", () => ({
 
 const { runEnrollment, notifyRecipients, notifyBody } = await import("./flow-runner.server");
 
+/** Consulta de "¿el bot acaba de contestar?" que hace el primer mensaje de un flujo. */
+const isBotQuery = (q: FakeQuery) =>
+  q.filters.some((f) => f[0] === "eq" && f[1] === "sender" && f[2] === "bot");
+
 // Mensaje A → ¿respondió? (sí: etiqueta caliente · no: mensaje B y espera 1 día) → etapa P3.
 const steps: FlowStep[] = [
   { id: "a", type: "message", text: "Hola {{nombre}}", materialId: null },
@@ -59,6 +63,7 @@ function setup(opts: { replied: boolean; currentNode?: string | null; currentSte
       };
     if (q.table === "accounts") return { data: { id: "acc", name: "Espacio FX" } };
     if (q.table === "appointments" || q.table === "materials") return { data: [] };
+    if (q.table === "messages" && q.op === "select") return { data: null };
     if (q.table === "messages") return { data: { id: "m" } };
     return {};
   });
@@ -68,7 +73,9 @@ function setup(opts: { replied: boolean; currentNode?: string | null; currentSte
       .slice(1)
       .map((c) => c.payload as Record<string, unknown>);
   const sent = () =>
-    sb.calls.filter((c) => c.table === "messages").map((c) => (c.payload as { body: string }).body);
+    sb.calls
+      .filter((c) => c.table === "messages" && c.op === "insert")
+      .map((c) => (c.payload as { body: string }).body);
   const leadUpdates = () =>
     sb.calls
       .filter((c) => c.table === "leads" && c.op === "update")
@@ -216,6 +223,7 @@ describe("entrega al asesor", () => {
             user_id: n.user_id,
           })),
         };
+      if (q.table === "messages" && q.op === "select" && isBotQuery(q)) return { data: null };
       if (q.table === "messages" && q.op === "select") return { data: [] };
       if (q.table === "appointments" || q.table === "materials") return { data: [] };
       if (q.table === "messages") return { data: { id: "m" } };
@@ -335,6 +343,7 @@ describe("reglas de WhatsApp", () => {
       hours?: unknown;
       template?: Record<string, unknown> | null;
       optedOut?: boolean;
+      lastBotAt?: string;
     } = {},
   ) {
     sendingChannel.mockImplementation(async () => (opts.channel ? { phone_number_id: "1" } : null));
@@ -382,6 +391,8 @@ describe("reglas de WhatsApp", () => {
         return { data: { id: "acc", name: "Espacio FX", business_hours: opts.hours ?? {} } };
       if (q.table === "appointments" || q.table === "materials") return { data: [] };
       if (q.table === "account_memberships") return { data: [] };
+      if (q.table === "messages" && q.op === "select" && isBotQuery(q))
+        return { data: opts.lastBotAt ? { created_at: opts.lastBotAt } : null };
       if (q.table === "messages" && q.op === "select")
         return {
           data:
@@ -418,6 +429,28 @@ describe("reglas de WhatsApp", () => {
     text: "Hola {{nombre}}",
     materialId: null,
     ...extra,
+  });
+
+  it("si el bot acaba de contestar, el primer mensaje del flujo espera 2 minutos", async () => {
+    const t = run([msg()], {
+      channel: true,
+      lastLeadMessageAt: new Date().toISOString(),
+      lastBotAt: new Date().toISOString(),
+    });
+    await runEnrollment(t.client, "e1");
+    expect(t.sent()).toEqual([]);
+    const next = new Date(t.enrUpdates()[0]!.payload["next_run_at"] as string).getTime();
+    expect(next - Date.now()).toBeGreaterThan(100_000);
+  });
+
+  it("un envío fallido queda en el historial del lead", async () => {
+    dispatchMessage.mockResolvedValueOnce("fallido" as never);
+    const t = run([msg()], {
+      channel: true,
+      lastLeadMessageAt: new Date(Date.now() - 2 * HOUR).toISOString(),
+    });
+    await runEnrollment(t.client, "e1");
+    expect(t.events().join(" ")).toContain("falló el envío");
   });
 
   it("con la ventana abierta envía el texto normal", async () => {

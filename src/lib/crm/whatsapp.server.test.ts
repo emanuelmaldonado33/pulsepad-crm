@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { planChannelSave } from "./whatsapp.server";
+import { planChannelSave, waRecipient } from "./whatsapp.server";
 
 const base = {
   phoneNumberId: "",
@@ -151,5 +151,74 @@ describe("plantillas y archivos de WhatsApp", async () => {
     expect(mediaType({ ...pdf, kind: "audio", url: "https://x/n.ogg" })).toBe("audio");
     expect(mediaType({ ...pdf, kind: "video", url: "https://youtu.be/abc" })).toBeNull();
     expect(mediaType(pdf)).toBe("document");
+  });
+});
+
+describe("waRecipient (521 de México)", () => {
+  it("cambia 521 + 10 dígitos por 52 + 10", () => {
+    expect(waRecipient("5215512345678")).toBe("525512345678");
+  });
+
+  it("deja igual un número de México que ya viene con 52", () => {
+    expect(waRecipient("525512345678")).toBe("525512345678");
+  });
+
+  it("no toca otros países", () => {
+    expect(waRecipient("14155550123")).toBe("14155550123");
+    expect(waRecipient("5491112345678")).toBe("5491112345678");
+    expect(waRecipient("34612345678")).toBe("34612345678");
+  });
+
+  it("acepta + y espacios", () => {
+    expect(waRecipient("+52 1 55 1234 5678")).toBe("525512345678");
+    expect(waRecipient("+52 55 1234-5678")).toBe("525512345678");
+  });
+
+  it("no recorta un 521 que no tiene 10 dígitos después", () => {
+    expect(waRecipient("52155123456789")).toBe("52155123456789");
+    expect(waRecipient("521551234567")).toBe("521551234567");
+  });
+});
+
+describe("planChannelSave (WABA de otro negocio)", () => {
+  const ok = async () => ({ ok: true as const, phone: "+52", name: "FX" });
+  it("rechaza un WABA ID que no es la cuenta del número", async () => {
+    const r = await planChannelSave(
+      {
+        phoneNumberId: "111",
+        wabaId: "999",
+        accessToken: "tok",
+        clearAccessToken: false,
+        clearAppSecret: false,
+        enabled: true,
+      },
+      null,
+      ok,
+      async () => ({
+        ok: false as const,
+        error: "Ese WABA ID no es la cuenta de WhatsApp Business de este número",
+      }),
+    );
+    expect(r).toEqual({
+      ok: false,
+      error: "Ese WABA ID no es la cuenta de WhatsApp Business de este número",
+    });
+  });
+  it("no vuelve a consultar a Meta si nada cambió", async () => {
+    const waba = vi.fn(async () => ({ ok: true as const }));
+    const cur = { phone_number_id: "111", access_token: "tok", app_secret: "", waba_id: "999" };
+    await planChannelSave(
+      {
+        phoneNumberId: "111",
+        wabaId: "999",
+        clearAccessToken: false,
+        clearAppSecret: false,
+        enabled: true,
+      },
+      cur,
+      ok,
+      waba,
+    );
+    expect(waba).not.toHaveBeenCalled();
   });
 });

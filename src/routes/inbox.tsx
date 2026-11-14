@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { sendAdvisorMessage } from "@/lib/crm/whatsapp.functions";
+import { windowOpen } from "@/lib/crm/flows";
 import { ArrowUp, Plus } from "lucide-react";
 import { useCrm } from "@/lib/crm/store";
 import { setBot } from "@/lib/crm/automation";
@@ -146,6 +147,13 @@ function Inbox() {
             </label>
           </div>
           <ChatThread messages={lead.messages} />
+          {lead.source !== "Simulador" &&
+            !windowOpen(lead.messages.filter((m) => m.from === "lead").at(-1)?.at) && (
+              <p className="mx-auto w-full max-w-2xl px-4 text-[13px] text-muted-foreground sm:px-8">
+                Pasaron más de 24 horas desde el último mensaje del cliente. WhatsApp no deja
+                escribirle texto libre: usa un flujo con plantilla aprobada.
+              </p>
+            )}
           <form
             className="mx-auto flex w-full max-w-2xl items-end gap-2 px-4 pb-4 pt-2 sm:px-8"
             onSubmit={(e) => {

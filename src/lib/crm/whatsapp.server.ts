@@ -1,4 +1,5 @@
 import type { Material, WaTemplate } from "./flows";
+import { openChannel } from "./secrets.server";
 
 const GRAPH_API_VERSION = process.env["WHATSAPP_GRAPH_API_VERSION"] ?? "v26.0";
 export const GRAPH = `https://graph.facebook.com/${GRAPH_API_VERSION}`;
@@ -9,6 +10,15 @@ export const samePhone = (a: string, b: string) => {
   const x = digits(a),
     y = digits(b);
   return x.length >= 10 && y.length >= 10 && x.slice(-10) === y.slice(-10);
+};
+/**
+ * Número "to" para la API de WhatsApp. Meta entrega los celulares de México como 521 + 10
+ * dígitos, pero envía (y valida la lista de destinatarios) con 52 + 10. El lead conserva el
+ * número tal como llegó; sólo el envío usa este. Otros países no cambian.
+ */
+export const waRecipient = (phone: string) => {
+  const d = digits(phone);
+  return /^521\d{10}$/.test(d) ? `52${d.slice(3)}` : d;
 };
 
 async function admin() {
@@ -23,7 +33,7 @@ export async function getChannel(accountId: string) {
     .eq("account_id", accountId)
     .maybeSingle();
   if (!data || !data.enabled || !data.phone_number_id || !data.access_token) return null;
-  return data;
+  return openChannel(data);
 }
 
 async function graphSend(phoneNumberId: string, token: string, payload: Record<string, unknown>) {
@@ -84,7 +94,7 @@ export async function dispatchMessage(opts: {
     await sb.from("messages").update({ wa_status: "simulado" }).eq("id", opts.messageId);
     return "simulado" as const;
   }
-  const to = digits(opts.phone);
+  const to = waRecipient(opts.phone);
   try {
     const m = opts.material;
     const type = m ? mediaType(m) : null;
@@ -180,12 +190,12 @@ export async function dispatchTemplate(opts: {
   }
   try {
     const waId = await graphSend(ch.phone_number_id, ch.access_token, {
-      to: digits(opts.phone),
+      to: waRecipient(opts.phone),
       ...templatePayload(opts.template, opts.values, opts.material),
     });
     await sb
       .from("messages")
-      .update({ wa_status: "enviado", wa_message_id: waId })
+      .update({ wa_status: "enviado", wa_message_id: waId, template_name: opts.template.name })
       .eq("id", opts.messageId);
     return { status: "enviado" as const, error: null };
   } catch (e) {
@@ -276,7 +286,7 @@ export async function sendInternalWhatsApp(accountId: string, phone: string, tex
   if (!ch) return "simulado" as const;
   try {
     await graphSend(ch.phone_number_id, ch.access_token, {
-      to: digits(phone),
+      to: waRecipient(phone),
       type: "text",
       text: { body: text.slice(0, 4096), preview_url: true },
     });
@@ -307,8 +317,32 @@ export async function checkCredentials(phoneNumberId: string, token: string) {
   };
 }
 
+/**
+ * Comprueba que el WABA ID es la cuenta de WhatsApp Business del número, con el mismo token.
+ * Sin esto cualquiera podía escribir el WABA de otro negocio y estorbar sus avisos de Meta.
+ */
+export async function checkWaba(wabaId: string, phoneNumberId: string, token: string) {
+  const res = await fetch(
+    `${GRAPH}/${encodeURIComponent(wabaId)}/phone_numbers?fields=id&limit=100`,
+    { headers: { Authorization: `Bearer ${token}` } },
+  );
+  const body = (await res.json().catch(() => ({}))) as {
+    data?: { id?: string }[];
+    error?: { message?: string };
+  };
+  if (!res.ok)
+    return { ok: false as const, error: body.error?.message ?? `Meta respondió ${res.status}` };
+  if (!(body.data ?? []).some((p) => p.id === phoneNumberId))
+    return {
+      ok: false as const,
+      error: "Ese WABA ID no es la cuenta de WhatsApp Business de este número",
+    };
+  return { ok: true as const };
+}
+
 type ChannelInput = {
   phoneNumberId: string;
+  wabaId?: string | undefined;
   accessToken?: string | undefined;
   appSecret?: string | undefined;
   clearAccessToken: boolean;
@@ -323,8 +357,14 @@ type ChannelInput = {
  */
 export async function planChannelSave(
   input: ChannelInput,
-  cur: { phone_number_id: string; access_token: string; app_secret: string } | null,
+  cur: {
+    phone_number_id: string;
+    access_token: string;
+    app_secret: string;
+    waba_id?: string;
+  } | null,
   check: typeof checkCredentials,
+  wabaCheck: typeof checkWaba = checkWaba,
 ): Promise<
   { ok: true; token: string; appSecret: string; info: string } | { ok: false; error: string }
 > {
@@ -342,6 +382,16 @@ export async function planChannelSave(
     const r = await check(input.phoneNumberId, token);
     if (!r.ok) return { ok: false, error: r.error };
     info = `${r.name} ${r.phone}`.trim();
+  }
+  const wabaChanged = (input.wabaId ?? "") !== (cur?.waba_id ?? "");
+  if (
+    input.wabaId &&
+    token &&
+    input.phoneNumberId &&
+    (wabaChanged || phoneChanged || tokenChanged)
+  ) {
+    const w = await wabaCheck(input.wabaId, input.phoneNumberId, token);
+    if (!w.ok) return { ok: false, error: w.error };
   }
   return { ok: true, token, appSecret, info };
 }
