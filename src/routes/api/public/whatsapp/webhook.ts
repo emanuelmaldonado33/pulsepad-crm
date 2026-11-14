@@ -203,6 +203,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
         const { mediaOf, mediaToText } = await import("@/lib/crm/media.server");
+        const { openChannel } = await import("@/lib/crm/secrets.server");
         const sigHeader = request.headers.get("x-hub-signature-256");
         const toProcess: string[] = [];
         const leadsWithNews = new Set<string>();
@@ -214,7 +215,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
             const v = change.value;
             const pnid = v.metadata?.phone_number_id;
             if (!pnid || !v.messages?.length) continue; // estados de entrega, etc.
-            const { data: ch, error: channelError } = await sb
+            const { data: stored, error: channelError } = await sb
               .from("whatsapp_channels")
               .select("*")
               .eq("phone_number_id", pnid)
@@ -224,7 +225,17 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               console.error("whatsapp webhook channel lookup failed", channelError.message);
               return new Response("Temporary failure", { status: 500 });
             }
-            if (!ch) continue;
+            if (!stored) continue;
+            let ch: typeof stored;
+            try {
+              ch = await openChannel(stored);
+            } catch (e) {
+              console.error(
+                "whatsapp channel secrets unreadable",
+                e instanceof Error ? e.message : e,
+              );
+              return new Response("Temporary failure", { status: 500 });
+            }
             if (!(await validSignature(raw, sigHeader, ch.app_secret)))
               return new Response("Invalid signature", { status: 401 });
 

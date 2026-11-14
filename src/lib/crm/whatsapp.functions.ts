@@ -10,6 +10,7 @@ import {
   sendingChannel,
 } from "./whatsapp.server";
 import { windowOpen } from "./flows";
+import { decryptSecret, encryptSecret, openChannel } from "./secrets.server";
 
 export type WhatsAppStatus = {
   mode: "conectado" | "desconectado" | "simulacion";
@@ -98,12 +99,13 @@ export const saveWhatsApp = createServerFn({ method: "POST" })
   )
   .handler(async ({ data, context }) => {
     const supabaseAdmin = await requireWhatsAppAdmin(data.accountId, context.userId);
-    const { data: cur, error: readError } = await supabaseAdmin
+    const { data: stored, error: readError } = await supabaseAdmin
       .from("whatsapp_channels")
       .select("*")
       .eq("account_id", data.accountId)
       .maybeSingle();
     if (readError) throw new Error("No se pudo leer la configuración actual");
+    const cur = stored ? await openChannel(stored) : null;
     const plan = await planChannelSave(data, cur, checkCredentials);
     if (!plan.ok) return { ok: false, error: plan.error, info: "" };
     const { token, appSecret, info } = plan;
@@ -111,8 +113,9 @@ export const saveWhatsApp = createServerFn({ method: "POST" })
       account_id: data.accountId,
       phone_number_id: data.phoneNumberId,
       waba_id: data.wabaId,
-      access_token: token,
-      app_secret: appSecret,
+      // Cifrados con CHANNEL_SECRETS_KEY: un respaldo o una consulta filtrada no los expone.
+      access_token: await encryptSecret(token),
+      app_secret: await encryptSecret(appSecret),
       verify_token: data.verifyToken,
       enabled: data.enabled,
       last_error: null,
@@ -196,7 +199,7 @@ export const syncWhatsAppTemplates = createServerFn({ method: "POST" })
       };
     let list;
     try {
-      list = await fetchMetaTemplates(ch.waba_id, ch.access_token);
+      list = await fetchMetaTemplates(ch.waba_id, await decryptSecret(ch.access_token));
     } catch (e) {
       return {
         ok: false,

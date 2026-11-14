@@ -147,6 +147,8 @@ SELECT test_helpers.eq('usuario no ve la lista de administradores',
   (SELECT count(*) FROM public.platform_admins), 0::bigint);
 SELECT test_helpers.denied('navegador consulta el consumo de IA de otra cuenta',
   $$SELECT public.ai_tokens_since('espacio-fx', now() - interval '1 day')$$);
+SELECT test_helpers.denied('navegador consulta las plantillas enviadas de otra cuenta',
+  $$SELECT public.templates_sent_since('espacio-fx', now() - interval '1 day')$$);
 RESET ROLE;
 SELECT test_helpers.eq('el propietario confirmado es administrador de plataforma',
   (SELECT count(*) FROM public.platform_admins
@@ -208,6 +210,10 @@ SELECT test_helpers.no_rows('member no edita la cuenta',
 SELECT test_helpers.denied('member no se asciende',
   $$UPDATE public.account_memberships SET role = 'owner' WHERE user_id = '33333333-3333-3333-3333-333333333333'$$);
 SELECT test_helpers.no_rows('member no borra leads', $$DELETE FROM public.leads WHERE id = 'fx9'$$);
+SELECT test_helpers.denied('member inventa el clic del anuncio (conversión falsa a Meta)',
+  $$UPDATE public.leads SET ctwa_clid = 'falso' WHERE id = 'fx1'$$);
+SELECT test_helpers.denied('member crea un lead con datos de anuncio',
+  $$INSERT INTO public.leads (account_id, name, ctwa_clid) VALUES ('espacio-fx', 'x', 'falso')$$);
 SELECT test_helpers.no_rows('member no borra flujos', $$DELETE FROM public.flows$$);
 SELECT test_helpers.no_rows('member no borra materiales', $$DELETE FROM public.materials$$);
 SELECT test_helpers.affects('member sí edita leads',
