@@ -198,7 +198,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
         }
 
         const { supabaseAdmin: sb } = await import("@/integrations/supabase/client.server");
-        const { qrSourceOf } = await import("@/lib/crm/qr.server");
+        const { notifyQrSeller, qrSourceOf } = await import("@/lib/crm/qr.server");
         const { samePhone } = await import("@/lib/crm/whatsapp.server");
         const { processInboundMessage } = await import("@/lib/crm/inbound.server");
         const { runDueForLead } = await import("@/lib/crm/flow-runner.server");
@@ -283,13 +283,23 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
                   return new Response("Temporary failure", { status: 500 });
                 }
                 leadId = created.id;
-                if (qr)
+                if (qr) {
                   await sb.from("lead_events").insert({
                     account_id: ch.account_id,
                     lead_id: created.id,
                     kind: "qr",
                     body: `Llegó por el QR «${qr.name}»`,
                   });
+                  if (qr.assigned_to)
+                    await notifyQrSeller(sb, {
+                      accountId: ch.account_id,
+                      leadId: created.id,
+                      leadName: name,
+                      phone: `+${m.from}`,
+                      qrName: qr.name,
+                      sellerId: qr.assigned_to,
+                    });
+                }
               }
               // Notas de voz y fotos se guardan ya como texto: así las leen la IA, las
               // palabras clave de los flujos (trigger al insertar) y el asesor.

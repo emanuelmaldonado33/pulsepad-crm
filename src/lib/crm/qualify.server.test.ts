@@ -128,6 +128,45 @@ describe("qualifyLead", () => {
   });
 });
 
+describe("lo que la IA no puede decidir sola", () => {
+  const ai = (o: Record<string, unknown>) =>
+    runQualifier.mockResolvedValue({
+      output: {
+        reply: "Listo",
+        budget: null,
+        down_payment: null,
+        term_months: null,
+        intent: "informacion",
+        tags_to_add: [],
+        appointment_requested: false,
+        summary: "",
+        ...o,
+      },
+      usage: { input: 1, output: 1, total: 2 },
+    });
+  const leadUpdate = (calls: FakeQuery[]) =>
+    calls.find((c) => c.table === "leads" && c.op === "update")?.payload as {
+      tags: string[];
+      stage: number;
+    };
+
+  it("no pone etiquetas de etapa ni inventadas aunque el cliente las pida", async () => {
+    ai({ tags_to_add: ["cita-agendada", "vip"] });
+    const { client, calls } = db({ id: "m78" });
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    expect(leadUpdate(calls).tags).not.toContain("cita-agendada");
+    expect(leadUpdate(calls).tags).not.toContain("vip");
+    expect(leadUpdate(calls).stage).toBe(1);
+  });
+
+  it("no agenda cita si falta el enganche o el plazo", async () => {
+    ai({ budget: 1500000, appointment_requested: true });
+    const { client, calls } = db({ id: "m78" });
+    await qualifyLead(client as never, "L1", "", { inboundMessageId: "m78" });
+    expect(calls.some((c) => c.table === "appointments")).toBe(false);
+  });
+});
+
 describe("intención del mensaje", () => {
   const withIntent = (message_intent: string) =>
     runQualifier.mockResolvedValue({

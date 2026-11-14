@@ -36,7 +36,7 @@ export const Route = createFileRoute("/inbox")({
 });
 
 function Inbox() {
-  const { leads, updateLead, materials, reload } = useCrm();
+  const { leads, updateLead, materials, reload, materialLink } = useCrm();
   const { lead: leadParam } = Route.useSearch();
   const navigate = useNavigate();
   const [text, setText] = useState("");
@@ -174,8 +174,10 @@ function Inbox() {
                   onChange={(e) => {
                     const m = materials.find((x) => x.id === e.target.value);
                     if (m)
-                      setText(
-                        (t) => `${t}${t ? " " : ""}${materialIcon(m.kind)} ${m.name}: ${m.url}`,
+                      void materialLink(m).then((url) =>
+                        setText(
+                          (t) => `${t}${t ? " " : ""}${materialIcon(m.kind)} ${m.name}: ${url}`,
+                        ),
                       );
                   }}
                 >

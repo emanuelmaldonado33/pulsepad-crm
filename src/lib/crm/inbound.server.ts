@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
 import { qualifyLead } from "./qualify.server";
 import { flowAnswersNow } from "./flow-runner.server";
+import { handleOptOutMessage } from "./optout.server";
 
 type Sb = SupabaseClient<Database>;
 
@@ -22,6 +23,8 @@ export type InboundOutcome =
  * que el barrido de flows-tick reintente; sólo lanza si no pudo hablar con la base.
  */
 export async function processInboundMessage(sb: Sb, messageId: string): Promise<InboundOutcome> {
+  // Baja por palabras («ya no me escriban») o mensaje de alguien ya dado de baja.
+  await optOutFollowUp(sb, messageId);
   const { data: claim, error: claimError } = await sb.rpc("claim_inbound_message", {
     p_message_id: messageId,
     p_max_attempts: MAX_AI_ATTEMPTS,
@@ -49,6 +52,8 @@ export async function processInboundMessage(sb: Sb, messageId: string): Promise<
       .eq("id", msg.id)
       .eq("ai_status", "processing");
     if (doneError) console.error("inbound finalize failed", doneError.message);
+    // Baja que detectó la IA en este mismo mensaje: se le confirma al cliente.
+    if (result.optOut) await optOutFollowUp(sb, msg.id);
     // Los mensajes pendientes que la IA ya leyó en este turno quedan contestados con
     // esta misma respuesta, en lugar de recibir una respuesta cada uno.
     if (result.contextUntil) {
@@ -70,6 +75,14 @@ export async function processInboundMessage(sb: Sb, messageId: string): Promise<
       .eq("id", msg.id)
       .eq("ai_status", "processing");
     return "error";
+  }
+}
+
+async function optOutFollowUp(sb: Sb, messageId: string) {
+  try {
+    await handleOptOutMessage(sb, messageId);
+  } catch (e) {
+    console.error("opt-out follow-up failed", messageId, e instanceof Error ? e.message : e);
   }
 }
 

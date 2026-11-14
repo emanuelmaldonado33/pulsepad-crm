@@ -266,3 +266,51 @@ export function processLeadMessage(input: Lead, text: string, product: string): 
   }
   return { lead, reply, events, bookAppointment: false };
 }
+
+/**
+ * Etiquetas que esta subcuenta usa en sus flujos (disparador, condición o paso de etiqueta).
+ * Es la lista blanca de lo que la IA puede poner: así nunca inventa etiquetas ni pone una
+ * sólo porque el cliente se lo pidió (auditoría M5).
+ */
+export function flowTags(
+  flows: { trigger_type: string; trigger_value: string; trigger_config: unknown; steps: unknown }[],
+): Set<string> {
+  const out = new Set<string>();
+  const add = (t: unknown) => {
+    if (typeof t === "string" && t.trim()) out.add(t.trim().toLowerCase());
+  };
+  const walk = (v: unknown) => {
+    if (Array.isArray(v)) return v.forEach(walk);
+    if (!v || typeof v !== "object") return;
+    const o = v as Record<string, unknown>;
+    if (o["kind"] === "tag") add(o["tag"]);
+    if (o["type"] === "action" && (o["action"] === "add_tag" || o["action"] === "remove_tag"))
+      add(o["value"]);
+    Object.values(o).forEach(walk);
+  };
+  for (const f of flows) {
+    if (f.trigger_type === "tag") add(f.trigger_value);
+    const cfg = f.trigger_config as { tag?: unknown } | null;
+    add(cfg?.tag);
+    walk(f.steps);
+  }
+  return out;
+}
+
+/** Máximo de etiquetas que la IA puede agregar en un turno. */
+export const MAX_AI_TAGS = 2;
+
+/**
+ * Filtra las etiquetas que propone la IA: nunca las que mueven etapa o apagan el bot (eso lo
+ * decide el código con los datos del lead) y sólo las de la lista blanca de la subcuenta.
+ */
+export function aiTagsToApply(proposed: string[], allowed: Set<string>): string[] {
+  const out: string[] = [];
+  for (const t of proposed) {
+    const clean = t.trim().toLowerCase().replace(/\s+/g, "-");
+    if (!clean || clean.length > 40 || TAG_RULES[clean] || !allowed.has(clean)) continue;
+    if (!out.includes(clean)) out.push(clean);
+    if (out.length >= MAX_AI_TAGS) break;
+  }
+  return out;
+}

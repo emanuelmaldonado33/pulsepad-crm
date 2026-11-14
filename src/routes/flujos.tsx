@@ -18,7 +18,14 @@ import {
 import { toast } from "sonner";
 import { useCrm } from "@/lib/crm/store";
 import { STAGES } from "@/lib/crm/types";
-import { FLOW_TEMPLATES, allSteps, triggerLabel, type Flow, type Material } from "@/lib/crm/flows";
+import {
+  FLOW_TEMPLATES,
+  MATERIAL_LINK_DAYS,
+  allSteps,
+  triggerLabel,
+  type Flow,
+  type Material,
+} from "@/lib/crm/flows";
 import { FlowEditor } from "@/components/crm/FlowEditor";
 import { AiFlowDialog, ImportFlowDialog } from "@/components/crm/FlowAiImport";
 import { exportFlow } from "@/lib/crm/flow-io";
@@ -296,6 +303,7 @@ function Library({
   onAdd: (m: Omit<Material, "id" | "accountId">) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
 }) {
+  const { materialLink } = useCrm();
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [kind, setKind] = useState<Material["kind"]>("pdf");
@@ -396,16 +404,29 @@ function Library({
               target="_blank"
               rel="noreferrer"
               className="block max-w-xl truncate text-xs text-muted-foreground hover:text-primary"
+              onClick={(e) => {
+                if (!m.storagePath) return;
+                e.preventDefault();
+                // Abrir la ventana antes del await para que el navegador no la bloquee.
+                const w = window.open("", "_blank", "noreferrer");
+                void materialLink(m).then((u) => (w ? (w.location.href = u) : window.open(u)));
+              }}
             >
-              {m.url}
+              {m.storagePath ? `${m.name} (archivo subido)` : m.url}
             </a>
           </div>
           <Button
             size="sm"
             variant="outline"
             onClick={() => {
-              void navigator.clipboard.writeText(m.url);
-              toast.success("Enlace copiado");
+              void materialLink(m).then(async (u) => {
+                await navigator.clipboard.writeText(u);
+                toast.success(
+                  m.storagePath
+                    ? `Enlace copiado: abre por ${MATERIAL_LINK_DAYS} días`
+                    : "Enlace copiado",
+                );
+              });
             }}
           >
             <Copy className="mr-1 h-3.5 w-3.5" /> Copiar enlace

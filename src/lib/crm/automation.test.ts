@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyTag, extractData, moveToStage, processLeadMessage } from "./automation";
+import {
+  aiTagsToApply,
+  applyTag,
+  extractData,
+  flowTags,
+  moveToStage,
+  processLeadMessage,
+} from "./automation";
 import type { Lead } from "./types";
 
 const base: Lead = {
@@ -52,5 +59,31 @@ describe("extracción", () => {
     l = processLeadMessage(l, "a 24 meses", "x").lead;
     expect(l.downPayment).toBe(200_000);
     expect(l.stage).toBe(4);
+  });
+});
+
+describe("lista blanca de etiquetas para la IA", () => {
+  const allowed = flowTags([
+    { trigger_type: "tag", trigger_value: "VIP", trigger_config: {}, steps: [] },
+    {
+      trigger_type: "keyword",
+      trigger_value: "precio",
+      trigger_config: {},
+      steps: [
+        { id: "a", type: "action", action: "add_tag", value: "inversionista" },
+        { id: "b", type: "branch", rule: { kind: "tag", tag: "credito" } },
+      ],
+    },
+  ]);
+  it("junta las etiquetas de disparadores, pasos y condiciones", () => {
+    expect([...allowed].sort()).toEqual(["credito", "inversionista", "vip"]);
+  });
+  it("descarta las que mueven etapa, las inventadas y las de más", () => {
+    expect(
+      aiTagsToApply(
+        ["cita-agendada", "Ganado", "super vip", "vip", "credito", "inversionista"],
+        allowed,
+      ),
+    ).toEqual(["vip", "credito"]);
   });
 });

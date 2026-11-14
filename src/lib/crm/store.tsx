@@ -21,6 +21,7 @@ import type {
 } from "./types";
 import { applyTag } from "./automation";
 import type { Enrollment, Flow, Material, WaTemplate } from "./flows";
+import { MATERIAL_LINK_DAYS } from "./flows";
 import { useServerFn } from "@tanstack/react-start";
 import { runFlowNow } from "./flows.functions";
 import {
@@ -79,6 +80,8 @@ interface Ctx {
   addMaterial: (m: Omit<Material, "id">) => Promise<void>;
   deleteMaterial: (id: string) => Promise<void>;
   uploadMaterial: (file: File, name: string) => Promise<boolean>;
+  /** Enlace para compartir: un archivo subido se firma de nuevo por MATERIAL_LINK_DAYS días. */
+  materialLink: (m: Material) => Promise<string>;
   importLeads: (
     rows: { name: string; phone: string; budget: number | null; tag: string | null }[],
   ) => Promise<{ imported: number; duplicates: number }>;
@@ -111,10 +114,15 @@ interface Ctx {
 const CrmContext = createContext<Ctx | null>(null);
 const ACTIVE_KEY = "crm-active-account";
 
-const fail = (what: string, e: { message: string } | null) => {
+const fail = (what: string, e: { message: string; code?: string } | null) => {
   if (e) {
     console.error(what, e);
-    toast.error(`No se pudo ${what}`);
+    // 42501 = la base lo negó por permisos (p. ej. un asesor quitando una baja).
+    toast.error(
+      e.code === "42501"
+        ? `No tienes permiso para ${what}: pídeselo al dueño o a un administrador`
+        : `No se pudo ${what}`,
+    );
   }
 };
 
@@ -441,6 +449,13 @@ export function CrmProvider({ children }: { children: ReactNode }) {
         if (error || !data) return fail("guardar el material", error);
         setState((s) => ({ ...s, materials: [...s.materials, { ...m, id: data.id }] }));
       },
+      materialLink: async (m) => {
+        if (!m.storagePath) return m.url;
+        const { data } = await supabase.storage
+          .from("materials")
+          .createSignedUrl(m.storagePath, MATERIAL_LINK_DAYS * 86_400);
+        return data?.signedUrl ?? m.url;
+      },
       uploadMaterial: async (file, name) => {
         const kind: Material["kind"] =
           file.type === "application/pdf"
@@ -460,9 +475,10 @@ export function CrmProvider({ children }: { children: ReactNode }) {
           fail("subir el archivo", up.error);
           return false;
         }
+        // Enlace corto: cada vez que se comparte se genera uno nuevo (materialLink y servidor).
         const sig = await supabase.storage
           .from("materials")
-          .createSignedUrl(path, 60 * 60 * 24 * 365 * 5);
+          .createSignedUrl(path, MATERIAL_LINK_DAYS * 86_400);
         if (sig.error || !sig.data) {
           fail("generar el enlace", sig.error);
           return false;
