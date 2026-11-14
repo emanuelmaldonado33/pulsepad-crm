@@ -218,10 +218,19 @@ SELECT test_helpers.no_rows('member no borra flujos', $$DELETE FROM public.flows
 SELECT test_helpers.no_rows('member no borra materiales', $$DELETE FROM public.materials$$);
 SELECT test_helpers.affects('member sí edita leads',
   $$UPDATE public.leads SET notes = 'nota' WHERE id = 'fx1'$$, 1);
+SELECT test_helpers.denied('member cambia el origen del cliente',
+  $$UPDATE public.leads SET source = 'Referido' WHERE id = 'fx1'$$);
 RESET ROLE;
--- El owner sí puede borrar.
+UPDATE public.leads SET opted_out_at = now(), opt_out_reason = 'prueba' WHERE id = 'fx1';
+SET ROLE authenticated;
+SELECT test_helpers.denied('member quita una baja (0025)',
+  $$UPDATE public.leads SET opted_out_at = NULL WHERE id = 'fx1'$$);
+RESET ROLE;
+-- El owner sí puede borrar y quitar una baja.
 SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
 SET ROLE authenticated;
+SELECT test_helpers.affects('owner quita una baja',
+  $$UPDATE public.leads SET opted_out_at = NULL WHERE id = 'fx1'$$, 1);
 SELECT test_helpers.affects('owner borra leads',
   $$DELETE FROM public.leads WHERE id = 'fx9'$$, 1);
 RESET ROLE;
@@ -635,10 +644,18 @@ RESET ROLE;
 
 SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
 SET ROLE authenticated;
-SELECT test_helpers.affects('el equipo quita la baja desde la ficha',
+SELECT test_helpers.denied('un asesor no quita la baja (0025)',
+  $$UPDATE public.leads SET opted_out_at = NULL WHERE id = 'b-lead'$$);
+RESET ROLE;
+SELECT test_helpers.as_user('723bdc1b-0db6-4118-9d97-c8a033df9b9f');
+SET ROLE authenticated;
+SELECT test_helpers.affects('el dueño quita la baja desde la ficha',
   $$UPDATE public.leads SET opted_out_at = NULL WHERE id = 'b-lead'$$, 1);
 SELECT test_helpers.eq('y queda en el historial',
   (SELECT count(*) FROM public.lead_events WHERE lead_id = 'b-lead' AND kind = 'baja'), 2::bigint);
+RESET ROLE;
+SELECT test_helpers.as_user('33333333-3333-3333-3333-333333333333');
+SET ROLE authenticated;
 SELECT test_helpers.affects('ve las plantillas de su cuenta',
   $$SELECT 1 FROM public.whatsapp_templates$$, 1);
 SELECT test_helpers.denied('no crea plantillas',

@@ -26,6 +26,7 @@ import {
   type WaTemplate,
 } from "./flows";
 import type { Account, Lead } from "./types";
+import { withFreshUrls } from "./materials.server";
 
 type Sb = SupabaseClient<Database>;
 type MemberRow = { user_id: string; role: string; display_name: string; whatsapp_phone: string };
@@ -214,7 +215,12 @@ export async function runEnrollment(sb: Sb, id: string, force = false): Promise<
           .gt("at", now.toISOString())
           .order("at")
           .limit(1),
-        sb.from("materials").select("*").eq("account_id", enr.account_id),
+        sb
+          .from("materials")
+          .select("*")
+          .eq("account_id", enr.account_id)
+          // Enlace nuevo de días al enviar, no el guardado al subir (auditoría M7).
+          .then(async (r) => ({ data: r.data ? await withFreshUrls(sb, r.data) : r.data })),
       ]);
     const { data: memberRows } = await sb
       .from("account_memberships")

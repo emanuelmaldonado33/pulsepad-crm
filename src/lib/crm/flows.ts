@@ -148,6 +148,9 @@ export interface Enrollment {
   createdAt: string;
 }
 
+/** Días que abre el enlace de un archivo subido, contados desde que se envía. */
+export const MATERIAL_LINK_DAYS = 7;
+
 export interface Material {
   id: string;
   accountId: string;

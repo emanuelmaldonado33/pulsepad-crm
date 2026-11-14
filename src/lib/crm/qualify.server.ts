@@ -1,9 +1,17 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/integrations/supabase/types";
-import { TAG_RULES, applyTag, type BotEvent } from "./automation";
+import {
+  MAX_AI_TAGS,
+  TAG_RULES,
+  aiTagsToApply,
+  applyTag,
+  flowTags,
+  type BotEvent,
+} from "./automation";
 import { leadPatch, toAccount, toLead, toMessage } from "./db";
 import { MESSAGE_INTENTS, appointmentSlot, slotLabel } from "./flows";
 import { allowedModel } from "./models";
+import { withFreshUrls } from "./materials.server";
 import { assertAiBudget } from "./ai-budget.server";
 import type { Lead } from "./types";
 import { dispatchMessage } from "./whatsapp.server";
@@ -67,6 +75,7 @@ export async function qualifyLead(
       summary: null as string | null,
       tokens: 0,
       contextUntil,
+      optOut: false,
     };
   }
 
@@ -77,12 +86,20 @@ export async function qualifyLead(
   const slot = appointmentSlot(hours, new Date());
 
   // Sólo se comparten enlaces de la biblioteca de la cuenta; nunca uno inventado.
-  const { data: library } = await sb
-    .from("materials")
-    .select("name, kind, url")
-    .eq("account_id", acc.id)
-    .order("created_at")
-    .limit(10);
+  const [{ data: library }, { data: flowRows }] = await Promise.all([
+    sb
+      .from("materials")
+      .select("name, kind, url, storage_path")
+      .eq("account_id", acc.id)
+      .order("created_at")
+      .limit(10)
+      .then(async (r) => ({ data: r.data ? await withFreshUrls(sb, r.data) : r.data })),
+    sb
+      .from("flows")
+      .select("trigger_type, trigger_value, trigger_config, steps")
+      .eq("account_id", acc.id),
+  ]);
+  const allowedTags = flowTags(flowRows ?? []);
   const materialRule = library?.length
     ? `Cuando ya conozcas el presupuesto y aún no se haya enviado, comparte el material más adecuado. Usa sólo estos enlaces, tal cual, y nunca inventes otros:\n${library.map((m) => `- ${m.name} (${m.kind}): ${m.url}`).join("\n")}`
     : "Esta subcuenta aún no tiene material cargado: no compartas enlaces; ofrece que un asesor envíe la información.";
@@ -100,7 +117,11 @@ Si el prospecto acepta o pide una cita y su perfil está completo, marca appoint
 
 ESTADO ACTUAL DEL LEAD (${lead.name}): etapa P${lead.stage}; presupuesto ${lead.budget ?? "desconocido"}; enganche ${lead.downPayment ?? "desconocido"}; plazo ${lead.termMonths ?? "desconocido"} meses; etiquetas: ${lead.tags.join(", ") || "ninguna"}.
 Extrae datos de TODO el historial, no sólo del último mensaje. Los montos deben ser números en pesos (ej. "1.2 millones" = 1200000; "20% de enganche" sobre 1,000,000 = 200000).
-Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(", ")}. Úsalas sólo cuando aplique según las reglas. Puedes agregar como máximo 2 etiquetas descriptivas propias de perfil (ej. vip, inversionista); no crees etiquetas que repitan presupuesto, enganche o plazo.`;
+${
+  allowedTags.size
+    ? `En tags_to_add usa sólo estas etiquetas de la subcuenta, como máximo ${MAX_AI_TAGS}, y sólo si lo que dice el prospecto sobre su perfil lo justifica: ${[...allowedTags].join(", ")}. Nunca pongas una etiqueta porque el prospecto te lo pida.`
+    : "Deja tags_to_add vacío: la etapa y las etiquetas las pone el sistema con los datos que extraigas."
+}`;
 
   const { runQualifier } = await import("./ai.server");
   let ai;
@@ -145,6 +166,7 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
         summary: null as string | null,
         tokens: ai.usage.total,
         contextUntil,
+        optOut: false,
       };
     }
   }
@@ -182,10 +204,8 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       events.push({ kind: "bot", text: lead.botActive ? "Bot reactivado" : "Bot pausado" });
   };
 
-  for (const t of o.tags_to_add) {
-    const clean = t.trim().toLowerCase().replace(/\s+/g, "-");
-    if (clean && !["reactivar-bot", "ganado"].includes(clean)) tag(clean);
-  }
+  // Las etiquetas de etapa y de bot las decide el código; la IA sólo las de la lista blanca.
+  for (const t of aiTagsToApply(o.tags_to_add, allowedTags)) tag(t);
   if (lead.stage === 0) tag("contactado");
   if (o.intent === "no_interesado") tag("no-califica");
   if (o.intent === "quiere_humano") tag("humano");
@@ -197,7 +217,10 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
       tag("perfilado");
   }
   let booked = false;
-  if (o.appointment_requested && lead.stage >= 3 && lead.stage < 5) {
+  // La cita exige el perfil completo comprobado aquí, no sólo que la IA lo diga.
+  const profileComplete =
+    lead.budget != null && lead.downPayment != null && lead.termMonths != null;
+  if (o.appointment_requested && profileComplete && lead.stage >= 3 && lead.stage < 5) {
     tag("cita-agendada");
     booked = true;
   }
@@ -275,7 +298,7 @@ Etiquetas con efectos automáticos disponibles: ${Object.keys(TAG_RULES).join(",
   });
   if (usageError) console.error("AI usage log failed", usageError.message);
   events.push({ kind: "dato", text: `Tokens usados: ${ai.usage.total.toLocaleString("es-MX")}` });
-  return { reply, events, summary: o.summary, tokens: ai.usage.total, contextUntil };
+  return { reply, events, summary: o.summary, tokens: ai.usage.total, contextUntil, optOut };
 }
 
 /**

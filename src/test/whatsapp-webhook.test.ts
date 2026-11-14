@@ -179,6 +179,14 @@ describe("webhook de WhatsApp", () => {
       assigned_to: "ana",
     });
     expect(db.calls.find((c) => c.table === "lead_events" && c.op === "insert")).toBeDefined();
+    // Al vendedor le llega el aviso del cliente nuevo.
+    expect(
+      db.calls.find((c) => c.table === "notifications" && c.op === "insert")?.payload,
+    ).toMatchObject({
+      user_id: "ana",
+      lead_id: "L2",
+      title: "Cliente nuevo por tu QR «Lona Av. Vallarta»",
+    });
   });
 
   it("si el vendedor del QR ya no está en el equipo, el lead entra sin asignar", async () => {
@@ -193,6 +201,7 @@ describe("webhook de WhatsApp", () => {
     await post(payload("wamid.qr2", { text: { body: "info ref AB12" } }));
     const lead = db.calls.find((c) => c.table === "leads" && c.op === "insert")!;
     expect(lead.payload).toMatchObject({ qr_source_id: "qr1", assigned_to: null });
+    expect(db.calls.some((c) => c.table === "notifications")).toBe(false);
   });
 
   it("un código que no existe deja el lead como WhatsApp normal", async () => {

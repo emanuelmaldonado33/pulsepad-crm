@@ -3,6 +3,10 @@ import { fakeSupabase, type FakeQuery } from "@/test/fake-supabase";
 
 const qualifyLead = vi.fn();
 vi.mock("./qualify.server", () => ({ qualifyLead: (...a: unknown[]) => qualifyLead(...a) }));
+const handleOptOutMessage = vi.fn();
+vi.mock("./optout.server", () => ({
+  handleOptOutMessage: (...a: unknown[]) => handleOptOutMessage(...a),
+}));
 
 const { processInboundMessage, sweepInboundMessages, MAX_AI_ATTEMPTS } =
   await import("./inbound.server");
@@ -20,6 +24,7 @@ function db(claim: string, rpcError = false) {
 
 beforeEach(() => {
   qualifyLead.mockReset();
+  handleOptOutMessage.mockReset().mockResolvedValue(null);
 });
 
 describe("processInboundMessage", () => {
@@ -35,11 +40,26 @@ describe("processInboundMessage", () => {
   it("reserva con límite de intentos", async () => {
     const { client, calls } = db("busy");
     await processInboundMessage(client as never, "m1");
-    expect(calls[0]).toMatchObject({
+    expect(calls.find((c) => c.op === "rpc")).toMatchObject({
       op: "rpc",
       table: "claim_inbound_message",
       payload: { p_message_id: "m1", p_max_attempts: MAX_AI_ATTEMPTS },
     });
+  });
+
+  it("revisa la baja antes de reservar, y otra vez si la IA la detectó", async () => {
+    const { client } = db("done");
+    await processInboundMessage(client as never, "m1");
+    expect(handleOptOutMessage).toHaveBeenCalledWith(client, "m1");
+    handleOptOutMessage.mockClear();
+    qualifyLead.mockResolvedValue({ contextUntil: null, optOut: true });
+    await processInboundMessage(db("claimed").client as never, "m1");
+    expect(handleOptOutMessage).toHaveBeenCalledTimes(2);
+    // Un error al avisar nunca tumba el procesamiento del mensaje.
+    handleOptOutMessage.mockRejectedValue(new Error("x"));
+    await expect(processInboundMessage(db("claimed").client as never, "m1")).resolves.toBe(
+      "processed",
+    );
   });
 
   it("procesa una vez y marca como respondidos los pendientes que la IA ya leyó", async () => {
