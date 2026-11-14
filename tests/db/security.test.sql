@@ -730,7 +730,11 @@ INSERT INTO public.messages (lead_id, sender, body, wa_message_id, wa_status)
   VALUES ('qr-lead', 'bot', 'Hola', 'wamid.BC1', 'enviado');
 UPDATE public.broadcast_recipients SET status = 'enviado', wa_message_id = 'wamid.BC1',
   sent_at = now() - interval '1 hour' WHERE lead_id = 'qr-lead';
-SELECT public.apply_wa_status('wamid.BC1', 'read', now() - interval '30 minutes');
+-- Un aviso que llega por el número de otra subcuenta no toca este mensaje.
+SELECT public.apply_wa_status('wamid.BC1', 'failed', now(), 'x', 'mia');
+SELECT test_helpers.eq('el aviso de otra subcuenta no cambia el estado',
+  (SELECT wa_status FROM public.messages WHERE wa_message_id = 'wamid.BC1'), 'enviado'::text);
+SELECT public.apply_wa_status('wamid.BC1', 'read', now() - interval '30 minutes', NULL, 'espacio-fx');
 SELECT public.apply_wa_status('wamid.BC1', 'delivered', now() - interval '50 minutes');
 SELECT test_helpers.eq('leído no regresa a entregado',
   (SELECT status FROM public.broadcast_recipients WHERE lead_id = 'qr-lead'), 'leido'::text);

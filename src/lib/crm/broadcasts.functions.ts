@@ -128,7 +128,7 @@ export const createBroadcast = createServerFn({ method: "POST" })
       if (!data.materialId) throw new Error("Esta plantilla necesita un archivo de la biblioteca");
       const { data: m } = await sb
         .from("materials")
-        .select("name, kind, url")
+        .select("name, kind, url, storage_path")
         .eq("id", data.materialId)
         .eq("account_id", data.accountId)
         .maybeSingle();
@@ -137,7 +137,13 @@ export const createBroadcast = createServerFn({ method: "POST" })
         throw new Error(
           `La plantilla necesita un archivo de tipo ${want === "pdf" ? "PDF" : want === "image" ? "imagen" : "video"}`,
         );
-      material = { name: m.name, kind: m.kind as "image" | "video" | "pdf", url: m.url };
+      material = {
+        name: m.name,
+        kind: m.kind as "image" | "video" | "pdf",
+        url: m.url,
+        // Con esto cada lote firma un enlace nuevo del archivo (el guardado puede vencer).
+        storage_path: m.storage_path ?? null,
+      };
     }
     const a = await audienceFor(sb, data.accountId, data.segment);
     if (!a.recipients.length) throw new Error("Nadie en esa lista puede recibir la difusión");

@@ -216,15 +216,29 @@ async function sendBatch(
     headerFormat: tpl.header_format as WaTemplate["headerFormat"],
     params: tpl.params,
   };
-  const m = b.material as { name?: string; kind?: Material["kind"]; url?: string } | null;
+  const m = b.material as {
+    name?: string;
+    kind?: Material["kind"];
+    url?: string;
+    storage_path?: string | null;
+  } | null;
+  let url = m?.url;
+  if (m?.storage_path) {
+    // Enlace nuevo para este lote: el guardado al crear la difusión pudo haber vencido.
+    const { data: sig } = await sb.storage
+      .from("materials")
+      .createSignedUrl(m.storage_path, 7 * 86_400)
+      .catch(() => ({ data: null }));
+    url = sig?.signedUrl ?? url;
+  }
   const material: Material | undefined =
-    m?.url && m.kind
+    url && m?.kind
       ? {
           id: "difusion",
           accountId: b.account_id,
           name: m.name ?? "Archivo",
           kind: m.kind,
-          url: m.url,
+          url,
         }
       : undefined;
 
@@ -401,7 +415,12 @@ export async function createBroadcastRows(
     name: string;
     template: { name: string; language: string; category: string };
     params: string[];
-    material: { name: string; kind: Material["kind"]; url: string } | null;
+    material: {
+      name: string;
+      kind: Material["kind"];
+      url: string;
+      storage_path?: string | null;
+    } | null;
     segment: BroadcastSegment;
     dailyCap: number;
     startsAt: string | null;

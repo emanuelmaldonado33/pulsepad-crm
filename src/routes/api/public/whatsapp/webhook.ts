@@ -304,6 +304,7 @@ export const Route = createFileRoute("/api/public/whatsapp/webhook")({
               const { error: stError } = await sb.rpc("apply_wa_status", {
                 p_wa_id: st.id,
                 p_status: st.status,
+                p_account_id: ch.account_id,
                 p_at: st.timestamp
                   ? new Date(Number(st.timestamp) * 1000).toISOString()
                   : new Date().toISOString(),

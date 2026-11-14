@@ -121,9 +121,12 @@ REVOKE ALL ON FUNCTION public.claim_broadcast_batch(uuid, integer) FROM PUBLIC, 
 GRANT EXECUTE ON FUNCTION public.claim_broadcast_batch(uuid, integer) TO service_role;
 
 -- Estado de entrega que manda Meta (sent, delivered, read, failed). Nunca retrocede:
--- un «entregado» que llega después de «leído» no lo regresa.
+-- un «entregado» que llega después de «leído» no lo regresa. Sólo toca mensajes de la
+-- subcuenta del número que mandó el aviso (p_account_id), por si un id se repitiera.
+DROP FUNCTION IF EXISTS public.apply_wa_status(text, text, timestamptz, text);
 CREATE OR REPLACE FUNCTION public.apply_wa_status(
-  p_wa_id text, p_status text, p_at timestamptz, p_error text DEFAULT NULL
+  p_wa_id text, p_status text, p_at timestamptz, p_error text DEFAULT NULL,
+  p_account_id text DEFAULT NULL
 ) RETURNS void
 LANGUAGE plpgsql SET search_path = public AS $$
 DECLARE
@@ -135,6 +138,8 @@ BEGIN
   UPDATE public.messages
      SET wa_status = st
    WHERE wa_message_id = p_wa_id
+     AND (p_account_id IS NULL OR EXISTS (
+       SELECT 1 FROM public.leads l WHERE l.id = messages.lead_id AND l.account_id = p_account_id))
      AND CASE coalesce(wa_status, '')
            WHEN 'leido' THEN false
            WHEN 'fallido' THEN false
@@ -150,10 +155,11 @@ BEGIN
          delivered_at = CASE WHEN st IN ('entregado', 'leido') THEN coalesce(delivered_at, p_at) ELSE delivered_at END,
          read_at = CASE WHEN st = 'leido' THEN coalesce(read_at, p_at) ELSE read_at END,
          error = CASE WHEN st = 'fallido' THEN left(coalesce(p_error, 'Meta no lo entregó'), 300) ELSE error END
-   WHERE wa_message_id = p_wa_id;
+   WHERE wa_message_id = p_wa_id
+     AND (p_account_id IS NULL OR account_id = p_account_id);
 END $$;
-REVOKE ALL ON FUNCTION public.apply_wa_status(text, text, timestamptz, text) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.apply_wa_status(text, text, timestamptz, text) TO service_role;
+REVOKE ALL ON FUNCTION public.apply_wa_status(text, text, timestamptz, text, text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.apply_wa_status(text, text, timestamptz, text, text) TO service_role;
 
 -- Cuando el lead escribe, cuenta como respuesta a la última difusión que recibió (7 días).
 CREATE OR REPLACE FUNCTION public.broadcast_mark_replied() RETURNS trigger

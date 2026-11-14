@@ -908,7 +908,13 @@ export type Database = {
     }
     Functions: {
       apply_wa_status: {
-        Args: { p_at: string; p_error?: string; p_status: string; p_wa_id: string }
+        Args: {
+          p_account_id?: string
+          p_at: string
+          p_error?: string
+          p_status: string
+          p_wa_id: string
+        }
         Returns: undefined
       }
       templates_sent_since: {

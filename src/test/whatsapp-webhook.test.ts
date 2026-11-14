@@ -326,10 +326,16 @@ describe("estados de entrega y calidad del número", () => {
     expect(res.status).toBe(200);
     const rpcs = db.calls.filter((c) => c.op === "rpc" && c.table === "apply_wa_status");
     expect(rpcs.map((c) => c.payload)).toEqual([
-      { p_wa_id: "wamid.OUT", p_status: "read", p_at: new Date(1762110000 * 1000).toISOString() },
+      {
+        p_wa_id: "wamid.OUT",
+        p_status: "read",
+        p_account_id: "acc",
+        p_at: new Date(1762110000 * 1000).toISOString(),
+      },
       {
         p_wa_id: "wamid.BAD",
         p_status: "failed",
+        p_account_id: "acc",
         p_at: new Date(1762110001 * 1000).toISOString(),
         p_error: "131026 · Message undeliverable",
       },
