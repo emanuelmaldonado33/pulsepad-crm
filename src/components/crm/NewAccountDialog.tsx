@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DEFAULT_AI_MODEL } from "@/lib/crm/models";
 import { z } from "zod";
 import { useCrm } from "@/lib/crm/store";
 import { TEMPLATES, initialsOf, slugify, type TemplateId } from "@/lib/crm/templates";
@@ -65,7 +66,7 @@ export function NewAccountDialog({
       ticketLabel: t.ticketLabel,
       setterPrompt: t.prompt(v.data.name, v.data.product),
       qualificationRules: t.rules,
-      aiModel: "openai/gpt-6-astra",
+      aiModel: DEFAULT_AI_MODEL,
       template: tpl,
       standardTags: t.tags,
     });

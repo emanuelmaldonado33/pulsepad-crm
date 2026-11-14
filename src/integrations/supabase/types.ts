@@ -607,6 +607,12 @@ export type Database = {
           },
         ]
       }
+      platform_admins: {
+        Row: { created_at: string; user_id: string }
+        Insert: { created_at?: string; user_id: string }
+        Update: { created_at?: string; user_id?: string }
+        Relationships: []
+      }
       qr_sources: {
         Row: {
           account_id: string
@@ -738,6 +744,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      ai_tokens_since: {
+        Args: { p_account_id: string; p_since: string }
+        Returns: number
+      }
       assign_lead: {
         Args: {
           p_lead_id: string
@@ -762,6 +772,7 @@ export type Database = {
         Returns: boolean
       }
       flow_norm: { Args: { p: string }; Returns: string }
+      is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean }
       flow_try_enroll: {
         Args: {
           p_account_id: string

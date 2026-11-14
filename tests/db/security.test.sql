@@ -137,6 +137,24 @@ SELECT test_helpers.denied('intruso falsea created_by_user_id',
   $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground, created_by_user_id)
     VALUES ('falsa', 'F', 'F', 'x', 'y', '723bdc1b-0db6-4118-9d97-c8a033df9b9f')$$);
 
+-- 0023: registrarse ya no basta para crear subcuentas ni para gastar la IA de Pulse.
+SELECT test_helpers.denied('usuario registrado sin ser administrador crea subcuenta',
+  $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground)
+    VALUES ('colado', 'C', 'C', 'x', 'y')$$);
+SELECT test_helpers.denied('usuario se hace administrador de plataforma',
+  $$INSERT INTO public.platform_admins (user_id) VALUES ('22222222-2222-2222-2222-222222222222')$$);
+SELECT test_helpers.eq('usuario no ve la lista de administradores',
+  (SELECT count(*) FROM public.platform_admins), 0::bigint);
+SELECT test_helpers.denied('navegador consulta el consumo de IA de otra cuenta',
+  $$SELECT public.ai_tokens_since('espacio-fx', now() - interval '1 day')$$);
+RESET ROLE;
+SELECT test_helpers.eq('el propietario confirmado es administrador de plataforma',
+  (SELECT count(*) FROM public.platform_admins
+    WHERE user_id = '723bdc1b-0db6-4118-9d97-c8a033df9b9f'), 1::bigint);
+-- Desde aquí el "intruso" es un administrador de plataforma que crea su propia subcuenta.
+INSERT INTO public.platform_admins (user_id) VALUES ('22222222-2222-2222-2222-222222222222');
+SET ROLE authenticated;
+
 -- Su propia cuenta sí: queda como owner, y puede leerla en el mismo INSERT (RETURNING).
 SELECT test_helpers.affects('crear cuenta con RETURNING',
   $$INSERT INTO public.accounts (id, name, initials, brand, brand_foreground)
